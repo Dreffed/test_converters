@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Run #{{ run.id }}</h2>
+<p>Status: <strong>{{ run.status }}</strong></p>
+<p>Created: {{ run.created_at }}</p>
+<h3>Inputs</h3>
+<ul>
+  <li>Files: <code>{{ run.files|join(', ') }}</code></li>
+  <li>Converters: <code>{{ run.converters|join(', ') }}</code></li>
+  <li>Baseline: <code>{{ run.baseline }}</code></li>
+  <li>Visualize: <code>{{ run.visualize }}</code></li>
+</ul>
+
+{% if run.artifacts %}
+<h3>Artifacts</h3>
+<ul>
+  {% if run.artifacts.summary %}<li>Summary: <a href="/api/artifacts?path={{ run.artifacts.summary }}">summary.md</a></li>{% endif %}
+  {% if run.artifacts.report %}<li>Report: <a href="/api/artifacts?path={{ run.artifacts.report }}">benchmark_report.json</a></li>{% endif %}
+  {% if run.artifacts.details %}<li>Details: <a href="/api/artifacts?path={{ run.artifacts.details }}">detailed_results.json</a></li>{% endif %}
+  {% if run.artifacts.visual_dir %}<li>Visual dir: <code>{{ run.artifacts.visual_dir }}</code></li>{% endif %}
+  {% if run.error %}<li>Error: <code>{{ run.error }}</code></li>{% endif %}
+  </ul>
+{% endif %}
+
+<p><a class="btn" href="/">Back</a></p>
+{% endblock %}
+

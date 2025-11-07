@@ -365,6 +365,26 @@ class ConverterImplementations:
         return {
             'text': text
         }
+
+    @staticmethod
+    def textract_http_converter(file_path: str, **kwargs) -> Dict:
+        """Call a Textract-like HTTP sidecar service.
+
+        Expects POST to TEXTRACT_URL (env or kwarg) with multipart 'file'.
+        Response JSON should include {'text': '...'}.
+        """
+        import os
+        import requests
+        url = kwargs.get('textract_url') or os.environ.get('TEXTRACT_URL')
+        if not url:
+            raise RuntimeError("TEXTRACT_URL not set; provide via --textract-url or env var")
+        with open(file_path, 'rb') as f:
+            resp = requests.post(url, files={'file': (os.path.basename(file_path), f, 'application/pdf')}, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            text = str(data.get('text', ''))
+            meta = {k: v for k, v in data.items() if k != 'text'}
+            return {'text': text, **meta}
     
     @staticmethod
     def unstructured_converter(file_path: str, **kwargs) -> Dict:
@@ -410,6 +430,7 @@ def get_available_converters(test_imports: bool = True) -> Dict:
         'pdfminer': ConverterImplementations.pdfminer_converter,
         'pypandoc': ConverterImplementations.pypandoc_converter,
         'textract': ConverterImplementations.textract_converter,
+        'textract_http': ConverterImplementations.textract_http_converter,
         'unstructured': ConverterImplementations.unstructured_converter,
     }
     
@@ -441,6 +462,8 @@ def get_available_converters(test_imports: bool = True) -> Dict:
                 import pypandoc
             elif name == 'textract':
                 import textract
+            elif name == 'textract_http':
+                import requests
             elif name == 'unstructured':
                 import unstructured
             

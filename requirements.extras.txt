@@ -1,0 +1,14 @@
+# Optional / heavy extras (install as needed)
+markitdown[all]>=0.1.3
+unstructured[all-docs]>=0.10.0
+tika>=2.6.0
+pypandoc>=1.12
+textract>=1.6.5
+
+# Optional string similarity
+python-Levenshtein>=0.21.0
+fuzzywuzzy>=0.18.0
+
+# Optional HTTP client for sidecar services
+requests>=2.32.0
+

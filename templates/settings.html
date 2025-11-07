@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Settings</h2>
+<form method="post" action="/settings">
+  <label>Baseline:
+    <input name="baseline" value="{{ config.baseline }}" />
+  </label>
+  <br/>
+  <label>Default Converters (comma-separated):
+    <input name="converters" value="{{ ','.join(config.converters or []) }}" />
+  </label>
+  <br/>
+  <label><input type="checkbox" name="visualize" {% if config.visualize %}checked{% endif %}/> Enable visualization</label>
+  <h3>Visualization</h3>
+  <label>DPI: <input type="number" name="viz_dpi" value="{{ config.viz.dpi }}"/></label>
+  <label>IoU Threshold: <input type="number" step="0.1" name="viz_iou_thr" value="{{ config.viz.iou_thr }}"/></label>
+  <label>Match Mode:
+    <select name="viz_match">
+      <option value="bipartite" {% if config.viz.match=='bipartite' %}selected{% endif %}>bipartite</option>
+      <option value="greedy" {% if config.viz.match=='greedy' %}selected{% endif %}>greedy</option>
+    </select>
+  </label>
+  <label>Renderer:
+    <select name="viz_renderer">
+      <option value="auto" {% if config.viz.renderer=='auto' %}selected{% endif %}>auto</option>
+      <option value="pymupdf" {% if config.viz.renderer=='pymupdf' %}selected{% endif %}>pymupdf</option>
+      <option value="pdf2image" {% if config.viz.renderer=='pdf2image' %}selected{% endif %}>pdf2image</option>
+    </select>
+  </label>
+  <label><input type="checkbox" name="viz_export_blocks" {% if config.viz.export_blocks %}checked{% endif %}/> Export union blocks JSON</label>
+  <h3>OCR</h3>
+  <label>Tesseract DPI: <input type="number" name="tesseract_dpi" value="{{ config.tesseract_dpi }}"/></label>
+  <label>Poppler Path: <input name="poppler_path" value="{{ config.poppler_path or '' }}"/></label>
+  <br/>
+  <button class="btn" type="submit">Save</button>
+</form>
+{% endblock %}
+

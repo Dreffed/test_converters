@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<section>
+  <h2>Upload PDFs</h2>
+  <form action="/api/files" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept="application/pdf" required />
+    <button class="btn" type="submit">Upload</button>
+  </form>
+  <p>Uploaded files ({{ uploads|length }}):</p>
+  <ul>
+    {% for f in uploads %}
+      <li>{{ f.name }} ({{ f.size }} bytes)</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section>
+  <h2>Recent Runs</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Created</th><th>Status</th><th>Files</th><th>Converters</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for r in runs %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.created_at }}</td>
+          <td class="status {{ r.status }}">{{ r.status }}</td>
+          <td>{{ r.files|length }}</td>
+          <td>{{ r.converters|length }}</td>
+          <td>
+            <a class="btn" href="/runs/{{ r.id }}">View</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+

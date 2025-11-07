@@ -84,7 +84,9 @@ pip install pytesseract pdf2image Pillow
 
 ```bash
 # Install from requirements file
-pip install -r requirements.txt
+pip install -r requirements.base.txt               # core only
+# Optional extras (heavy):
+pip install -r requirements.base.txt -r requirements.extras.txt
 
 # Note: This will attempt to install ALL converters
 # Some may fail if system dependencies are missing
@@ -391,3 +393,6 @@ Engines currently providing block positions: `pymupdf`, `pdfplumber` (grouped li
 - Coverage per page: fraction of union blocks covered by an engine (IoU ≥ threshold)
 - Matching strategy: `bipartite` (default) or `greedy` (`--viz-match`)
 - Union baseline: deduplicated union of blocks from all engines on the page
+### Extras and Sidecars
+
+See EXTRAS.md for installing extras locally, or running heavy tools like textract as a sidecar HTTP service. When using a sidecar, enable the `textract_http` converter and pass `--textract-url http://textract:8090/extract` (or set `TEXTRACT_URL`).

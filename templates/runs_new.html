@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>New Run</h2>
+<form method="post" action="/runs">
+  <p>Select files (use uploaded filenames separated by commas). Uploaded files directory: {{ (env or {}).APP_DATA_DIR or 'data' }}/uploads</p>
+  <label>Files (comma-separated full paths):
+    <input name="files" placeholder="/data/uploads/file1.pdf,/data/uploads/file2.pdf"/>
+  </label>
+  <br/>
+  <label>Converters (comma-separated):
+    <input name="converters" value="{{ ','.join(available or []) }}"/>
+  </label>
+  <br/>
+  <label>Baseline:
+    <input name="baseline" value="{{ config.baseline }}"/>
+  </label>
+  <br/>
+  <button class="btn" type="submit">Start</button>
+  <a class="btn" href="/">Cancel</a>
+  <p>Available converters: {{ ', '.join(available or []) }}</p>
+</form>
+{% endblock %}
+

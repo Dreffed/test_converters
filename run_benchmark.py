@@ -101,6 +101,11 @@ Examples:
         action='store_true',
         help='Verbose output with detailed errors'
     )
+    parser.add_argument(
+        '--textract-url',
+        default=None,
+        help='URL for textract_http sidecar (POST /extract)'
+    )
 
     # Visualization flags
     parser.add_argument(
@@ -226,7 +231,8 @@ Examples:
         'verbose': args.verbose,
         'extract_tables': args.extract_tables,
         'dpi': args.tesseract_dpi,
-        'poppler_path': args.poppler_path
+        'poppler_path': args.poppler_path,
+        'textract_url': args.textract_url,
     }
     
     # Wrap converters with kwargs

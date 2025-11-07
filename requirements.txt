@@ -39,3 +39,9 @@ unstructured[all-docs]>=0.10.0
 # Optional: Advanced text analysis
 python-Levenshtein>=0.21.0  # Fast string comparison
 fuzzywuzzy>=0.18.0  # Fuzzy string matching
+
+# UI server (optional)
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+jinja2>=3.1.2
+python-multipart>=0.0.9
