@@ -56,7 +56,8 @@ class DocumentConverterBenchmark:
                  viz_iou_thr: float = 0.5,
                  viz_export_blocks: bool = False,
                  viz_renderer: str = 'auto',
-                 viz_poppler_path: Optional[str] = None):
+                 viz_poppler_path: Optional[str] = None,
+                 viz_match_mode: str = 'bipartite'):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.results: List[ConversionResult] = []
@@ -68,6 +69,7 @@ class DocumentConverterBenchmark:
         self.viz_export_blocks = viz_export_blocks
         self.viz_renderer = viz_renderer
         self.viz_poppler_path = viz_poppler_path
+        self.viz_match_mode = viz_match_mode
         
     def _calculate_text_metrics(self, text: str) -> Tuple[int, int, int]:
         """Calculate basic text metrics"""
@@ -379,7 +381,8 @@ class DocumentConverterBenchmark:
             out_dir = self.viz_output_dir / os.path.splitext(os.path.basename(file_path))[0]
             out_dir.mkdir(parents=True, exist_ok=True)
             viz = Visualizer(output_dir=out_dir, dpi=self.viz_dpi, iou_thr=self.viz_iou_thr,
-                             renderer=self.viz_renderer, poppler_path=self.viz_poppler_path)
+                             renderer=self.viz_renderer, poppler_path=self.viz_poppler_path,
+                             match_mode=self.viz_match_mode)
             metrics = viz.process_document(
                 pdf_path=file_path,
                 per_engine_blocks_norm=engines_pages,

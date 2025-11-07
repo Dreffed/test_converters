@@ -293,21 +293,49 @@ class ConverterImplementations:
     @staticmethod
     def pdfminer_converter(file_path: str, **kwargs) -> Dict:
         """Convert using pdfminer.six"""
-        from pdfminer.high_level import extract_text
-        from pdfminer.layout import LAParams
-        
+        from pdfminer.high_level import extract_text, extract_pages
+        from pdfminer.layout import LAParams, LTTextBox, LTTextBoxHorizontal, LTTextLine, LTTextLineHorizontal
+
         # Configure layout parameters
         laparams = LAParams(
             line_margin=kwargs.get('line_margin', 0.5),
             word_margin=kwargs.get('word_margin', 0.1),
             char_margin=kwargs.get('char_margin', 2.0)
         )
-        
+
         text = extract_text(file_path, laparams=laparams)
-        
-        return {
-            'text': text
-        }
+
+        # Extract blocks per page
+        blocks_per_page = {}
+        try:
+            for page_index, layout in enumerate(extract_pages(file_path, laparams=laparams)):
+                # page bbox: (x0, y0, x1, y1) with origin bottom-left
+                try:
+                    x0p, y0p, x1p, y1p = layout.bbox
+                except Exception:
+                    continue
+                pw = max(1.0, float(x1p - x0p))
+                ph = max(1.0, float(y1p - y0p))
+                rects = []
+                for element in layout:
+                    if isinstance(element, (LTTextBoxHorizontal, LTTextBox, LTTextLineHorizontal, LTTextLine)):
+                        x0, y0, x1, y1 = map(float, element.bbox)
+                        # Normalize to top-left origin [0,1]: invert Y
+                        nx0 = max(0.0, min(1.0, (x0 - x0p) / pw))
+                        nx1 = max(0.0, min(1.0, (x1 - x0p) / pw))
+                        ny0 = max(0.0, min(1.0, 1.0 - ((y1 - y0p) / ph)))
+                        ny1 = max(0.0, min(1.0, 1.0 - ((y0 - y0p) / ph)))
+                        if nx1 > nx0 and ny1 > ny0:
+                            rects.append({'x0': nx0, 'y0': ny0, 'x1': nx1, 'y1': ny1})
+                if rects:
+                    blocks_per_page[page_index] = rects
+        except Exception:
+            pass
+
+        result = {'text': text}
+        if blocks_per_page:
+            result['blocks_per_page'] = blocks_per_page
+        return result
     
     @staticmethod
     def pypandoc_converter(file_path: str, **kwargs) -> Dict:

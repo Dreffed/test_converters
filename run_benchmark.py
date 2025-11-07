@@ -126,6 +126,12 @@ Examples:
         help='IoU threshold for block coverage matching (default: 0.5)'
     )
     parser.add_argument(
+        '--viz-match',
+        choices=['greedy', 'bipartite'],
+        default='bipartite',
+        help='Matching strategy for coverage (default: bipartite)'
+    )
+    parser.add_argument(
         '--viz-export-blocks',
         action='store_true',
         help='Export canonical union blocks JSON per document for future UI'
@@ -252,6 +258,7 @@ Examples:
         viz_export_blocks=args.viz_export_blocks,
         viz_renderer=args.viz_renderer,
         viz_poppler_path=args.poppler_path,
+        viz_match_mode=args.viz_match,
     )
     
     baseline = args.baseline if args.baseline in converters else None

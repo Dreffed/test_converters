@@ -61,12 +61,14 @@ def iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, floa
 
 class Visualizer:
     def __init__(self, output_dir: Path, dpi: int = 200, iou_thr: float = 0.5,
-                 renderer: str = 'auto', poppler_path: Optional[str] = None):
+                 renderer: str = 'auto', poppler_path: Optional[str] = None,
+                 match_mode: str = 'bipartite'):
         self.output_dir = Path(output_dir)
         self.dpi = dpi
         self.iou_thr = iou_thr
         self.renderer = renderer
         self.poppler_path = poppler_path
+        self.match_mode = match_mode  # 'greedy' | 'bipartite'
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _render_pages_pymupdf(self, pdf_path: str) -> List[Tuple[Path, int, int]]:
@@ -140,22 +142,52 @@ class Visualizer:
     def _coverage_for_engine(self, engine_blocks: List[TextBlock], union_blocks: List[TextBlock]) -> float:
         if not union_blocks:
             return 0.0
-        matched = 0
-        used = [False] * len(union_blocks)
-        for eb in engine_blocks:
-            best_iou = 0.0
-            best_idx = -1
-            for i, ub in enumerate(union_blocks):
-                if used[i]:
-                    continue
-                v = iou((eb.x0, eb.y0, eb.x1, eb.y1), (ub.x0, ub.y0, ub.x1, ub.y1))
-                if v >= self.iou_thr and v > best_iou:
-                    best_iou = v
-                    best_idx = i
-            if best_idx >= 0:
-                used[best_idx] = True
-                matched += 1
-        return matched / len(union_blocks)
+        if self.match_mode == 'greedy':
+            matched = 0
+            used = [False] * len(union_blocks)
+            for eb in engine_blocks:
+                best_iou = 0.0
+                best_idx = -1
+                for i, ub in enumerate(union_blocks):
+                    if used[i]:
+                        continue
+                    v = iou((eb.x0, eb.y0, eb.x1, eb.y1), (ub.x0, ub.y0, ub.x1, ub.y1))
+                    if v >= self.iou_thr and v > best_iou:
+                        best_iou = v
+                        best_idx = i
+                if best_idx >= 0:
+                    used[best_idx] = True
+                    matched += 1
+            return matched / len(union_blocks)
+        else:
+            # Bipartite maximum matching (unweighted) between engine blocks and union blocks
+            # Build adjacency list where edge exists if IoU >= threshold
+            n_left = len(engine_blocks)
+            n_right = len(union_blocks)
+            adj: List[List[int]] = [[] for _ in range(n_left)]
+            for li, eb in enumerate(engine_blocks):
+                for ri, ub in enumerate(union_blocks):
+                    v = iou((eb.x0, eb.y0, eb.x1, eb.y1), (ub.x0, ub.y0, ub.x1, ub.y1))
+                    if v >= self.iou_thr:
+                        adj[li].append(ri)
+
+            match_r = [-1] * n_right
+
+            def bpm(u: int, seen: List[bool]) -> bool:
+                for v in adj[u]:
+                    if not seen[v]:
+                        seen[v] = True
+                        if match_r[v] == -1 or bpm(match_r[v], seen):
+                            match_r[v] = u
+                            return True
+                return False
+
+            result = 0
+            for u in range(n_left):
+                seen = [False] * n_right
+                if bpm(u, seen):
+                    result += 1
+            return result / len(union_blocks)
 
     def process_document(self,
                          pdf_path: str,
@@ -187,6 +219,7 @@ class Visualizer:
             'pypdf2': (0, 0, 255),
             'tesseract': (255, 255, 0),
             'markitdown': (255, 0, 255),
+            'pdfminer': (0, 255, 255),
         }
 
         per_page_metrics: List[Dict] = []
