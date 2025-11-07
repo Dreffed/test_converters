@@ -86,6 +86,21 @@ def run_benchmark_job(run_id: int):
     try:
         update_run(run_id, {"status": "running"})
         files: List[str] = run.get("files", [])
+        # Resolve file paths: accept absolute paths or basenames under uploads dir
+        resolved_files: List[str] = []
+        for f in files:
+            p = Path(f)
+            if p.is_file():
+                resolved_files.append(str(p))
+                continue
+            # Try basename under uploads
+            p2 = UPLOADS_DIR / p.name
+            if p2.is_file():
+                resolved_files.append(str(p2))
+                continue
+        if not resolved_files:
+            update_run(run_id, {"status": "failed", "error": "No valid input files found in /data/uploads or provided paths."})
+            return
         converters_req: List[str] = run.get("converters", [])
         baseline: Optional[str] = run.get("baseline")
         visualize: bool = run.get("visualize", False)
@@ -128,7 +143,7 @@ def run_benchmark_job(run_id: int):
         # Run
         base = baseline if baseline in converters_wrapped else None
         report = bench.run_benchmark_suite(
-            test_files=files,
+            test_files=resolved_files,
             converters=converters_wrapped,
             baseline_converter=base,
         )
@@ -216,17 +231,30 @@ def save_settings(
 @app.get("/runs/new", response_class=HTMLResponse)
 def new_run_page(request: Request):
     available = list(get_available_converters(test_imports=True).keys())
-    return templates.TemplateResponse("runs_new.html", {"request": request, "available": available, "config": CONFIG})
+    uploads = []
+    try:
+        for p in sorted(UPLOADS_DIR.glob("*.pdf")):
+            uploads.append({"name": p.name, "path": str(p), "size": p.stat().st_size})
+    except Exception:
+        pass
+    return templates.TemplateResponse(
+        "runs_new.html",
+        {"request": request, "available": available, "config": CONFIG, "uploads": uploads}
+    )
 
 
 @app.post("/runs")
 def create_run(
-    files: str = Form(""),
+    files: List[str] = Form([]),
     converters: str = Form(""),
-    baseline: str = Form("")
+    baseline: str = Form(""),
+    extra_files: str = Form("")
 ):
     run_id = next_run_id()
-    selected_files = [f for f in files.split(",") if f]
+    # Combine checkbox-selected files with any extra comma-separated paths
+    selected_files = list(files) if isinstance(files, list) else ([files] if files else [])
+    if extra_files:
+        selected_files.extend([f.strip() for f in extra_files.split(",") if f.strip()])
     selected_converters = [c for c in converters.split(",") if c]
     run = {
         "id": run_id,
@@ -307,4 +335,3 @@ def artifact(path: str):
     if not p.exists():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(str(p))
-

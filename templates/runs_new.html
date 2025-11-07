@@ -2,11 +2,27 @@
 {% block content %}
 <h2>New Run</h2>
 <form method="post" action="/runs">
-  <p>Select files (use uploaded filenames separated by commas). Uploaded files directory: {{ (env or {}).APP_DATA_DIR or 'data' }}/uploads</p>
-  <label>Files (comma-separated full paths):
-    <input name="files" placeholder="/data/uploads/file1.pdf,/data/uploads/file2.pdf"/>
+  <h3>Select Uploaded Files</h3>
+  {% if uploads and uploads|length > 0 %}
+    <ul>
+    {% for f in uploads %}
+      <li>
+        <label>
+          <input type="checkbox" name="files" value="{{ f.name }}" />
+          {{ f.name }} ({{ f.size }} bytes)
+        </label>
+      </li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p>No uploaded PDFs found. Go back to Home to upload.</p>
+  {% endif %}
+
+  <label>Additional files (comma-separated full paths inside container):
+    <input name="extra_files" placeholder="/data/uploads/extra.pdf"/>
   </label>
   <br/>
+
   <label>Converters (comma-separated):
     <input name="converters" value="{{ ','.join(available or []) }}"/>
   </label>
@@ -15,9 +31,9 @@
     <input name="baseline" value="{{ config.baseline }}"/>
   </label>
   <br/>
+
   <button class="btn" type="submit">Start</button>
   <a class="btn" href="/">Cancel</a>
   <p>Available converters: {{ ', '.join(available or []) }}</p>
 </form>
 {% endblock %}
-
