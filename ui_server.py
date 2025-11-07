@@ -49,7 +49,7 @@ CONFIG = load_json(CONFIG_FILE, {
     "visualize": False,
     "viz": {"dpi": 200, "iou_thr": 0.5, "match": "bipartite", "renderer": "auto", "export_blocks": False},
     "tesseract_dpi": 300,
-    "poppler_path": None,
+    "poppler_path": os.environ.get("POPPLER_PATH"),
 })
 
 

@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
 ENV APP_DATA_DIR=/data \
-    APP_PORT=8080
+    APP_PORT=8080 \
+    POPPLER_PATH=/usr/bin
 
 WORKDIR /app
 
