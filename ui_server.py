@@ -13,6 +13,8 @@ from fastapi.templating import Jinja2Templates
 
 from converter_benchmark import DocumentConverterBenchmark
 from converter_implementations import get_available_converters
+import urllib.parse
+import markdown as md
 
 
 APP_DATA_DIR = Path(os.environ.get("APP_DATA_DIR", "data")).resolve()
@@ -120,7 +122,7 @@ def run_benchmark_job(run_id: int):
         # kwargs passed into converter functions
         converter_kwargs = {
             'verbose': True,
-            'extract_tables': False,
+            'extract_tables': True,
             'dpi': tesseract_dpi,
             'poppler_path': poppler_path,
         }
@@ -281,6 +283,113 @@ def run_detail(request: Request, run_id: int):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return templates.TemplateResponse("run_detail.html", {"request": request, "run": run})
+
+
+@app.get("/runs/{run_id}/view", response_class=HTMLResponse)
+def run_view(request: Request, run_id: int):
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    # Render summary markdown, if available
+    summary_html = None
+    art = run.get("artifacts") or {}
+    summary_path = art.get("summary")
+    if summary_path and Path(summary_path).exists():
+        try:
+            text = Path(summary_path).read_text(encoding='utf-8')
+            summary_html = md.markdown(text)
+        except Exception:
+            summary_html = None
+    # Build visual index
+    visual_dir = art.get("visual_dir")
+    visual_index = []
+    if visual_dir and Path(visual_dir).exists():
+        vdir = Path(visual_dir)
+        for doc_dir in sorted([d for d in vdir.iterdir() if d.is_dir()]):
+            # base images
+            base_pages = sorted(doc_dir.glob('page_*.png'))
+            # find overlay subdir(s)
+            overlay_dirs = [d for d in doc_dir.iterdir() if d.is_dir()]
+            ovr = overlay_dirs[0] if overlay_dirs else None
+            pages_info = []
+            for bp in base_pages:
+                name = bp.stem  # page_000
+                idx_str = name.split('_')[-1]
+                try:
+                    pidx = int(idx_str)
+                except ValueError:
+                    continue
+                entry = {
+                    'page': pidx,
+                    'base': str(bp),
+                    'composite': None,
+                    'engines': {}
+                }
+                if ovr:
+                    # composite
+                    comp = ovr / f"page_{pidx:03d}_composite.png"
+                    if comp.exists():
+                        entry['composite'] = str(comp)
+                    # engines
+                    for img in ovr.glob(f"page_{pidx:03d}_*.png"):
+                        stem = img.stem
+                        if stem.endswith('_composite'):
+                            continue
+                        eng = stem.split('_', 3)[-1]
+                        entry['engines'][eng] = str(img)
+                pages_info.append(entry)
+            visual_index.append({
+                'doc': doc_dir.name,
+                'pages': pages_info
+            })
+    return templates.TemplateResponse("run_view.html", {
+        "request": request,
+        "run": run,
+        "summary_html": summary_html,
+        "visual_index_json": json.dumps(visual_index)
+    })
+
+
+@app.get("/runs/{run_id}/tables", response_class=HTMLResponse)
+def run_tables(request: Request, run_id: int):
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    art = run.get("artifacts") or {}
+    details_path = art.get("details")
+    converters = []
+    pages = set()
+    data: Dict[str, Dict[str, List]] = {}
+    if details_path and Path(details_path).exists():
+        try:
+            results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+            # results is a list of ConversionResult dicts
+            for r in results:
+                conv = r.get('converter_name')
+                meta = r.get('metadata') or {}
+                tp = meta.get('tables_per_page') or {}
+                if tp:
+                    if conv not in converters:
+                        converters.append(conv)
+                    cdict = data.setdefault(conv, {})
+                    for page_str, tables in tp.items():
+                        # keys might be strings or ints in JSON
+                        try:
+                            p = int(page_str)
+                        except Exception:
+                            p = page_str
+                        pages.add(p)
+                        cdict[str(p)] = tables
+        except Exception:
+            pass
+    pages_list = sorted(list(pages))
+    return templates.TemplateResponse("run_tables.html", {
+        "request": request,
+        "run": run,
+        "converters": converters,
+        "pages": pages_list,
+        "tables_json": json.dumps(data)
+    })
 
 
 @app.post("/api/files")

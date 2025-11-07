@@ -67,6 +67,7 @@ class ConverterImplementations:
 
         text_parts = []
         table_count = 0
+        tables_per_page = {}
 
         with pdfplumber.open(file_path) as pdf:
             metadata = {
@@ -86,10 +87,19 @@ class ConverterImplementations:
                         tables = page.extract_tables()
                         if tables:
                             table_count += len(tables)
+                            # Store structured tables (as strings) for UI
+                            page_tables = []
                             for table in tables:
-                                # Convert table to text representation
-                                table_text = '\n'.join(['\t'.join(str(cell) for cell in row) for row in table])
+                                # Normalize cells to strings
+                                norm_rows = [["" if (cell is None) else str(cell) for cell in row] for row in table]
+                                page_tables.append({
+                                    'rows': norm_rows
+                                })
+                                # Also append a text representation to text parts (legacy behavior)
+                                table_text = '\n'.join(['\t'.join(str(cell) if cell is not None else '' for cell in row) for row in table])
                                 text_parts.append(f"\n[TABLE]\n{table_text}\n[/TABLE]\n")
+                            if page_tables:
+                                tables_per_page[page_num] = page_tables
                 
                 except Exception as e:
                     if kwargs.get('verbose'):
@@ -138,6 +148,8 @@ class ConverterImplementations:
         }
         if blocks_per_page:
             result['blocks_per_page'] = blocks_per_page
+        if tables_per_page:
+            result['tables_per_page'] = tables_per_page
         return result
     
     @staticmethod

@@ -20,8 +20,12 @@
   {% if run.artifacts.visual_dir %}<li>Visual dir: <code>{{ run.artifacts.visual_dir }}</code></li>{% endif %}
   {% if run.error %}<li>Error: <code>{{ run.error }}</code></li>{% endif %}
   </ul>
+
+<p>
+  <a class="btn" href="/runs/{{ run.id }}/view">Open Viewer</a>
+  <a class="btn" href="/runs/{{ run.id }}/tables">Tables</a>
+</p>
 {% endif %}
 
 <p><a class="btn" href="/">Back</a></p>
 {% endblock %}
-

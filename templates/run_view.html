@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Run #{{ run.id }} — Viewer</h2>
+
+<div style="display:flex; gap: 2rem; align-items:flex-start;">
+  <div style="flex: 1 1 50%; max-width:50%; overflow:auto;">
+    <h3>Summary</h3>
+    {% if summary_html %}
+      <div class="md">{{ summary_html | safe }}</div>
+    {% else %}
+      <p>No summary available.</p>
+    {% endif %}
+  </div>
+  <div style="flex: 1 1 50%; max-width:50%;">
+    <h3>Visual Overlays</h3>
+    <div>
+      <label>Document:
+        <select id="docSelect"></select>
+      </label>
+      <label>Page:
+        <input id="pageInput" type="number" min="0" value="0" style="width:6rem;"/>
+      </label>
+      <label>Layer:
+        <select id="layerSelect">
+          <option value="base">base</option>
+          <option value="composite">composite</option>
+        </select>
+      </label>
+      <label>Engine:
+        <select id="engineSelect">
+          <option value="">(none)</option>
+        </select>
+      </label>
+    </div>
+    <div style="margin-top: 1rem; border:1px solid #ccc; padding:0.5rem;">
+      <img id="viewer" src="" alt="page" style="max-width:100%; height:auto;"/>
+    </div>
+  </div>
+</div>
+
+<script>
+  const visualIndex = {{ visual_index_json | safe }};
+  const docSelect = document.getElementById('docSelect');
+  const pageInput = document.getElementById('pageInput');
+  const layerSelect = document.getElementById('layerSelect');
+  const engineSelect = document.getElementById('engineSelect');
+  const viewer = document.getElementById('viewer');
+
+  function populateDocs() {
+    docSelect.innerHTML = '';
+    visualIndex.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = d.doc;
+      docSelect.appendChild(opt);
+    });
+  }
+
+  function getDoc() { return visualIndex[parseInt(docSelect.value||'0')]; }
+  function getPageEntry(doc, pageIdx) {
+    return doc.pages.find(p => p.page === pageIdx) || null;
+  }
+
+  function updateEngineOptions() {
+    const doc = getDoc();
+    const pageIdx = parseInt(pageInput.value||'0');
+    const entry = getPageEntry(doc, pageIdx);
+    engineSelect.innerHTML = '<option value="">(none)</option>';
+    if (entry && entry.engines) {
+      Object.keys(entry.engines).sort().forEach(eng => {
+        const opt = document.createElement('option');
+        opt.value = eng; opt.textContent = eng;
+        engineSelect.appendChild(opt);
+      });
+    }
+  }
+
+  function artifactUrl(path) {
+    // Encode full path for /api/artifacts
+    return '/api/artifacts?path=' + encodeURIComponent(path);
+  }
+
+  function updateViewer() {
+    const doc = getDoc();
+    const pageIdx = parseInt(pageInput.value||'0');
+    const entry = getPageEntry(doc, pageIdx);
+    if (!entry) { viewer.src=''; return; }
+    let src = entry.base;
+    const layer = layerSelect.value;
+    const eng = engineSelect.value;
+    if (layer === 'composite' && entry.composite) src = entry.composite;
+    if (eng && entry.engines && entry.engines[eng]) src = entry.engines[eng];
+    viewer.src = artifactUrl(src);
+  }
+
+  docSelect.addEventListener('change', () => { updateEngineOptions(); updateViewer(); });
+  pageInput.addEventListener('change', () => { updateEngineOptions(); updateViewer(); });
+  layerSelect.addEventListener('change', updateViewer);
+  engineSelect.addEventListener('change', () => { layerSelect.value='base'; updateViewer(); });
+
+  // init
+  populateDocs();
+  docSelect.value = '0';
+  updateEngineOptions();
+  updateViewer();
+</script>
+{% endblock %}
+

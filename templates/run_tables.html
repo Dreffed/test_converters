@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Run #{{ run.id }} — Tables</h2>
+
+{% if converters and pages %}
+  <div>
+    <label>Converter:
+      <select id="convSelect">
+        {% for c in converters %}
+          <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Page:
+      <select id="pageSelect">
+        {% for p in pages %}
+          <option value="{{ p }}">{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <div id="tablesContainer" style="margin-top:1rem;"></div>
+
+  <script>
+    const tablesData = {{ tables_json | safe }};
+    const convSelect = document.getElementById('convSelect');
+    const pageSelect = document.getElementById('pageSelect');
+    const container = document.getElementById('tablesContainer');
+
+    function renderTables() {
+      const conv = convSelect.value;
+      const page = pageSelect.value;
+      container.innerHTML = '';
+      const pageTables = (tablesData[conv] || {})[String(page)] || [];
+      if (pageTables.length === 0) {
+        container.innerHTML = '<p>No tables found for this page.</p>';
+        return;
+      }
+      pageTables.forEach((t, idx) => {
+        const tbl = document.createElement('table');
+        tbl.style.borderCollapse = 'collapse';
+        tbl.style.marginBottom = '1rem';
+        const caption = document.createElement('caption');
+        caption.textContent = 'Table #' + (idx+1);
+        caption.style.textAlign = 'left';
+        tbl.appendChild(caption);
+        (t.rows || []).forEach(row => {
+          const tr = document.createElement('tr');
+          row.forEach(cell => {
+            const td = document.createElement('td');
+            td.textContent = cell;
+            td.style.border = '1px solid #ccc';
+            td.style.padding = '4px 6px';
+            tr.appendChild(td);
+          });
+          tbl.appendChild(tr);
+        });
+        container.appendChild(tbl);
+      });
+    }
+
+    convSelect.addEventListener('change', renderTables);
+    pageSelect.addEventListener('change', renderTables);
+    renderTables();
+  </script>
+{% else %}
+  <p>No tables were extracted for this run. Ensure table extraction is enabled and a supported engine like <code>pdfplumber</code> is used.</p>
+{% endif %}
+
+<p><a class="btn" href="/runs/{{ run.id }}">Back</a></p>
+{% endblock %}
+

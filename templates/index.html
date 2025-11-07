@@ -29,7 +29,9 @@
           <td>{{ r.files|length }}</td>
           <td>{{ r.converters|length }}</td>
           <td>
-            <a class="btn" href="/runs/{{ r.id }}">View</a>
+            <a class="btn" href="/runs/{{ r.id }}">Details</a>
+            <a class="btn" href="/runs/{{ r.id }}/view">Viewer</a>
+            <a class="btn" href="/runs/{{ r.id }}/tables">Tables</a>
           </td>
         </tr>
       {% endfor %}
@@ -37,4 +39,3 @@
   </table>
 </section>
 {% endblock %}
-
