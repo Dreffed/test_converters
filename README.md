@@ -27,6 +27,7 @@ A comprehensive testing framework to benchmark document conversion tools for **s
   - JSON reports (machine-readable)
   - Markdown summaries (human-readable)
   - Detailed result logs
+  - Visual overlays + coverage metrics (optional)
 
 ## 📋 Prerequisites
 
@@ -137,6 +138,12 @@ python run_benchmark.py test.pdf --output-dir my_results
 
 # Verbose mode (show detailed errors)
 python run_benchmark.py test.pdf --verbose
+
+# Visualize detected text blocks and coverage (union across engines)
+python run_benchmark.py test.pdf \
+  --converters pymupdf pdfplumber pdfminer tesseract \
+  --visualize-blocks --viz-dpi 200 --viz-iou-thr 0.5 \
+  --viz-match bipartite --viz-renderer auto --viz-export-blocks
 ```
 
 ### Programmatic Usage
@@ -360,3 +367,27 @@ converters = {
 ---
 
 **Note**: This benchmark suite is for testing and comparison purposes. Always validate converter output for production use cases.
+**For Visualization (optional):**
+```bash
+pip install pymupdf opencv-python numpy              # preferred stack
+# Fallback if not using OpenCV
+pip install Pillow
+
+# For pdf2image fallback renderer (Windows requires Poppler):
+pip install pdf2image
+```
+On Windows, if using pdf2image, install Poppler and pass `--poppler-path` pointing to its `bin` directory.
+
+### 4. Visual Outputs (when `--visualize-blocks`)
+Generated under `<output-dir>/visual/<document_basename>/`:
+- `page_XXX_<engine>.png` — per-engine overlays
+- `page_XXX_composite.png` — composite overlays (all engines with blocks)
+- `visual_metrics.json` — per-page coverage vs union of blocks; weighted per-document coverage
+- `visual_blocks.json` — canonical union blocks per page (when `--viz-export-blocks`)
+
+Engines currently providing block positions: `pymupdf`, `pdfplumber` (grouped lines), `pdfminer`, `tesseract` (TSV lines). Others are included in metrics but have no overlays.
+
+### Visual Coverage Metrics (when enabled)
+- Coverage per page: fraction of union blocks covered by an engine (IoU ≥ threshold)
+- Matching strategy: `bipartite` (default) or `greedy` (`--viz-match`)
+- Union baseline: deduplicated union of blocks from all engines on the page

@@ -109,28 +109,28 @@ Wire-through
 - `visualization/metrics.py` — build union, dedupe, compute coverage per page/doc
 - Integrate into `DocumentConverterBenchmark` with optional post-processing step if `--visualize-blocks`.
 
-## Phase Plan
-- Phase 1 (MVP)
-  - Add TextBlock model and `blocks_per_page` metadata to `ConversionResult`.
-  - Implement PyMuPDF blocks extraction in `pymupdf_converter` (and pass-through in metadata).
-  - Implement page rendering via PyMuPDF; add overlay drawing; output per-engine and composite images.
-  - Implement union/dedupe and coverage metrics; export per-page JSON + doc-level summary.
-  - Add CLI flags and write Markdown summary section linking images.
+## Phase Plan & Status
+- Phase 1 (MVP) — Completed
+  - Added normalized `blocks_per_page` in converter metadata.
+  - Implemented PyMuPDF blocks extraction (pymupdf_converter).
+  - Implemented PyMuPDF rendering; per-engine and composite overlays.
+  - Implemented union/dedupe and coverage metrics; per-page + doc JSON.
+  - Added CLI flags: `--visualize-blocks`, `--viz-output-dir`, `--viz-dpi`, `--viz-iou-thr`, `--viz-export-blocks`.
 
-- Phase 2
-  - Add Tesseract TSV parsing (`image_to_data`) to produce blocks; integrate into overlays and metrics.
-  - Add pdfplumber words->blocks clustering (e.g., simple line/paragraph grouping by proximity).
-  - Add `pdf2image` rendering fallback and auto-detection; honor `--viz-renderer`.
+- Phase 2 — Completed
+  - Added Tesseract TSV parsing (line grouping) to produce blocks.
+  - Added pdfplumber words→lines clustering for blocks.
+  - Added `pdf2image` fallback renderer and `--viz-renderer` selection.
 
-- Phase 3
-  - Optional: pdfminer.six layout extraction (LTTextBox/Line) and unstructured heuristics.
-  - Advanced matching variants: bipartite matching for blocks; tolerance/expansion for skew.
-  - Performance optimizations (multiprocessing per page; caching rendered images).
+- Phase 3 — Completed
+  - Added pdfminer.six block extraction (LTTextBox/Line) with coordinate normalization.
+  - Added bipartite matching option for coverage (`--viz-match`), defaulting to bipartite.
+  - Kept greedy matcher available for comparison.
 
 ## Output Artifacts
 - Images: per page per engine and composite (PNG)
-- JSON (metrics): `visual_metrics_{timestamp}.json` with per-page coverage + doc summary
-- JSON (blocks): `visual_blocks_{doc}_{timestamp}.json` with canonical union blocks per page, each entry containing bbox, page index, sources (engines covering it), and optional per-engine IoUs.
+- JSON (metrics): `visual_metrics.json` with per-page coverage + doc summary
+- JSON (blocks): `visual_blocks.json` with canonical union blocks per page, each entry containing bbox, page index, sources (engines covering it), and optional per-engine IoUs (when `--viz-export-blocks`).
 - Markdown: append a “Visual Coverage” section to `summary_*.md` with tables and links to images
 
 ## Future UI (Optional)
@@ -149,6 +149,10 @@ Wire-through
 - Unit tests for IoU, dedupe, and coordinate mapping
 - Golden-file tests for small sample PDF (2–3 pages)
 - Manual visual inspection for overlays
+
+## Current Support Matrix
+- Overlays + blocks: PyMuPDF, pdfplumber (grouped lines), pdfminer, Tesseract (TSV lines)
+- Planned/Not yet positional: PyPDF2, MarkItDown, Tika, pypandoc, textract, unstructured
 
 ## Estimated Effort
 - Phase 1: 1–2 days

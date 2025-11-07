@@ -41,6 +41,14 @@ pip install markitdown[all] PyPDF2 pdfplumber pymupdf pdfminer.six pytesseract p
 pip install -r requirements.txt
 ```
 
+### Visualization (optional)
+```bash
+pip install pymupdf opencv-python numpy pdf2image
+# Or, without OpenCV:
+pip install pymupdf Pillow pdf2image
+```
+Windows users: if using `pdf2image`, install Poppler and pass `--poppler-path` to the CLI.
+
 ---
 
 ## 🎯 Common Use Cases
@@ -70,6 +78,14 @@ python run_benchmark.py document.pdf --baseline markitdown
 python run_benchmark.py scanned.pdf --tesseract-dpi 600
 ```
 
+### Visualize Text Blocks + Coverage
+```bash
+python run_benchmark.py document.pdf \
+  --converters pymupdf pdfplumber pdfminer tesseract \
+  --visualize-blocks --viz-dpi 200 --viz-iou-thr 0.5 \
+  --viz-match bipartite --viz-renderer auto --viz-export-blocks
+```
+
 ---
 
 ## 📊 Understanding Results
@@ -85,6 +101,8 @@ Results are saved in `benchmark_results/` with three files:
 **Speed**: Lower execution time = faster
 **Accuracy**: Higher similarity % = more accurate vs baseline
 **Speed Ratio**: >1.0x means faster than baseline
+
+**Visual Coverage**: Coverage vs union of blocks (per page, per document). Matching strategy `bipartite` (default) or `greedy`.
 
 ---
 

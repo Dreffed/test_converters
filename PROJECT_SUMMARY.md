@@ -86,6 +86,10 @@ A complete, production-ready testing framework to benchmark PDF/document convert
 1. **JSON** - Machine-readable, full data
 2. **Markdown** - Human-readable tables
 3. **Console** - Real-time progress
+4. **Visual Overlays + Coverage (optional)**
+   - Per-page engine/composite PNGs
+   - Union-based coverage metrics (per page and aggregated)
+   - Canonical blocks JSON for future UI
 
 ## 🚀 Getting Started
 
@@ -116,6 +120,7 @@ python run_benchmark.py your_document.pdf
 Results saved in `benchmark_results/`:
 - Open `summary_TIMESTAMP.md` for human-readable report
 - Check `benchmark_report_TIMESTAMP.json` for complete data
+ - If `--visualize-blocks` enabled: see `benchmark_results/visual/<doc>/` for overlays and `visual_metrics.json`
 
 ## 📊 Example Output
 
@@ -161,6 +166,14 @@ python run_benchmark.py doc.pdf --converters markitdown pypdf2
 ### High-Quality OCR
 ```bash
 python run_benchmark.py scan.pdf --tesseract-dpi 600
+```
+
+### Visualize Blocks + Coverage
+```bash
+python run_benchmark.py doc.pdf \
+  --converters pymupdf pdfplumber pdfminer tesseract \
+  --visualize-blocks --viz-dpi 200 --viz-iou-thr 0.5 \
+  --viz-match bipartite --viz-renderer auto --viz-export-blocks
 ```
 
 ## 🔐 Security Features
@@ -257,6 +270,11 @@ python run_benchmark.py file.pdf --verbose
 - pypandoc (+ pandoc system package)
 - textract
 - unstructured
+ 
+**Visualization (optional):**
+- opencv-python, numpy (preferred)
+- Pillow (fallback)
+- pdf2image (+ Poppler for Windows)
 
 ## 🎓 Learn More
 
