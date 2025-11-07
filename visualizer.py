@@ -60,10 +60,13 @@ def iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, floa
 
 
 class Visualizer:
-    def __init__(self, output_dir: Path, dpi: int = 200, iou_thr: float = 0.5):
+    def __init__(self, output_dir: Path, dpi: int = 200, iou_thr: float = 0.5,
+                 renderer: str = 'auto', poppler_path: Optional[str] = None):
         self.output_dir = Path(output_dir)
         self.dpi = dpi
         self.iou_thr = iou_thr
+        self.renderer = renderer
+        self.poppler_path = poppler_path
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _render_pages_pymupdf(self, pdf_path: str) -> List[Tuple[Path, int, int]]:
@@ -81,6 +84,16 @@ class Visualizer:
                 rendered.append((img_path, pix.width, pix.height))
         finally:
             doc.close()
+        return rendered
+
+    def _render_pages_pdf2image(self, pdf_path: str) -> List[Tuple[Path, int, int]]:
+        from pdf2image import convert_from_path
+        imgs = convert_from_path(pdf_path, dpi=self.dpi, fmt='png', poppler_path=self.poppler_path)
+        rendered: List[Tuple[Path, int, int]] = []
+        for i, im in enumerate(imgs):
+            img_path = self.output_dir / f"page_{i:03d}.png"
+            im.save(img_path)
+            rendered.append((img_path, im.width, im.height))
         return rendered
 
     def _draw_rects(self, img_path: Path, rects: List[Tuple[int, int, int, int]], color: Tuple[int, int, int], thickness: int = 2) -> None:
@@ -157,7 +170,16 @@ class Visualizer:
         doc_out_dir.mkdir(parents=True, exist_ok=True)
 
         # Render pages
-        rendered = self._render_pages_pymupdf(pdf_path)
+        if self.renderer == 'pymupdf':
+            rendered = self._render_pages_pymupdf(pdf_path)
+        elif self.renderer == 'pdf2image':
+            rendered = self._render_pages_pdf2image(pdf_path)
+        else:
+            # auto
+            try:
+                rendered = self._render_pages_pymupdf(pdf_path)
+            except Exception:
+                rendered = self._render_pages_pdf2image(pdf_path)
 
         colors = {
             'pymupdf': (0, 255, 0),
@@ -266,4 +288,3 @@ class Visualizer:
                 json.dump(export_blocks, f, indent=2)
 
         return metrics
-

@@ -64,15 +64,16 @@ class ConverterImplementations:
     def pdfplumber_converter(file_path: str, **kwargs) -> Dict:
         """Convert using pdfplumber"""
         import pdfplumber
-        
+
         text_parts = []
         table_count = 0
-        
+
         with pdfplumber.open(file_path) as pdf:
             metadata = {
                 'pages': len(pdf.pages)
             }
             
+            blocks_per_page = {}
             for page_num, page in enumerate(pdf.pages):
                 try:
                     # Extract text
@@ -93,12 +94,51 @@ class ConverterImplementations:
                 except Exception as e:
                     if kwargs.get('verbose'):
                         print(f"Warning: Failed to extract page {page_num}: {e}")
-        
-        return {
+
+                # Attempt word-level extraction and group to line blocks
+                try:
+                    words = page.extract_words()
+                    if words:
+                        # Group by line proximity (top within tolerance)
+                        tol = 3.0
+                        lines = {}
+                        for w in words:
+                            top = float(w.get('top', 0.0))
+                            assigned = False
+                            for key in list(lines.keys()):
+                                if abs(key - top) <= tol:
+                                    lines[key].append(w)
+                                    assigned = True
+                                    break
+                            if not assigned:
+                                lines[top] = [w]
+                        rects = []
+                        pw, ph = page.width, page.height
+                        for _, ws in lines.items():
+                            x0 = min(float(w['x0']) for w in ws)
+                            y0 = min(float(w.get('top', 0.0)) for w in ws)
+                            x1 = max(float(w['x1']) for w in ws)
+                            y1 = max(float(w.get('bottom', float(w.get('top', 0.0)))) for w in ws)
+                            if pw and ph and x1 > x0 and y1 > y0:
+                                rects.append({
+                                    'x0': max(0.0, min(1.0, x0 / pw)),
+                                    'y0': max(0.0, min(1.0, y0 / ph)),
+                                    'x1': max(0.0, min(1.0, x1 / pw)),
+                                    'y1': max(0.0, min(1.0, y1 / ph)),
+                                })
+                        if rects:
+                            blocks_per_page[page_num] = rects
+                except Exception:
+                    pass
+
+        result = {
             'text': '\n\n'.join(text_parts),
             'table_count': table_count,
             **metadata
         }
+        if blocks_per_page:
+            result['blocks_per_page'] = blocks_per_page
+        return result
     
     @staticmethod
     def pymupdf_converter(file_path: str, **kwargs) -> Dict:
@@ -179,7 +219,7 @@ class ConverterImplementations:
         """Convert using Tesseract OCR (requires image conversion first)"""
         import pytesseract
         from pdf2image import convert_from_path
-        
+
         # Convert PDF to images
         try:
             images = convert_from_path(
@@ -194,25 +234,61 @@ class ConverterImplementations:
                 "On Windows, ensure Poppler is installed and pass --poppler-path to run_benchmark.py. "
                 f"Original error: {e}"
             )
-        
+
         text_parts = []
         lang = kwargs.get('lang', 'eng')
-        
+        blocks_per_page = {}
+
         for i, image in enumerate(images):
             try:
                 # Perform OCR
                 text = pytesseract.image_to_string(image, lang=lang)
                 if text:
                     text_parts.append(text)
+                # Extract line-level boxes via TSV
+                try:
+                    data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT)
+                    n = len(data.get('level', []))
+                    rects = []
+                    iw, ih = image.size
+                    # Aggregate words into lines by (block_num, par_num, line_num)
+                    groups = {}
+                    for idx in range(n):
+                        level = int(data['level'][idx])
+                        if level != 5:  # word level
+                            continue
+                        key = (int(data.get('block_num', [0])[idx]), int(data.get('par_num', [0])[idx]), int(data.get('line_num', [0])[idx]))
+                        left = int(data['left'][idx])
+                        top = int(data['top'][idx])
+                        width = int(data['width'][idx])
+                        height = int(data['height'][idx])
+                        groups.setdefault(key, []).append((left, top, left+width, top+height))
+                    for _, boxes in groups.items():
+                        x0 = min(b[0] for b in boxes); y0 = min(b[1] for b in boxes)
+                        x1 = max(b[2] for b in boxes); y1 = max(b[3] for b in boxes)
+                        if iw and ih and x1 > x0 and y1 > y0:
+                            rects.append({
+                                'x0': max(0.0, min(1.0, x0 / iw)),
+                                'y0': max(0.0, min(1.0, y0 / ih)),
+                                'x1': max(0.0, min(1.0, x1 / iw)),
+                                'y1': max(0.0, min(1.0, y1 / ih)),
+                            })
+                    if rects:
+                        blocks_per_page[i] = rects
+                except Exception:
+                    pass
             except Exception as e:
                 if kwargs.get('verbose'):
                     print(f"Warning: OCR failed on page {i}: {e}")
-        
-        return {
+
+        result = {
             'text': '\n\n'.join(text_parts),
             'pages_processed': len(images),
             'dpi': kwargs.get('dpi', 300)
         }
+        if blocks_per_page:
+            result['blocks_per_page'] = blocks_per_page
+        return result
     
     @staticmethod
     def pdfminer_converter(file_path: str, **kwargs) -> Dict:

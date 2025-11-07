@@ -130,6 +130,12 @@ Examples:
         action='store_true',
         help='Export canonical union blocks JSON per document for future UI'
     )
+    parser.add_argument(
+        '--viz-renderer',
+        choices=['auto', 'pymupdf', 'pdf2image'],
+        default='auto',
+        help='Renderer to use for visual page images (default: auto)'
+    )
     
     args = parser.parse_args()
     
@@ -244,6 +250,8 @@ Examples:
         viz_dpi=args.viz_dpi,
         viz_iou_thr=args.viz_iou_thr,
         viz_export_blocks=args.viz_export_blocks,
+        viz_renderer=args.viz_renderer,
+        viz_poppler_path=args.poppler_path,
     )
     
     baseline = args.baseline if args.baseline in converters else None
