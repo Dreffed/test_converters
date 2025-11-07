@@ -1,0 +1,41 @@
+# Core Testing Framework
+# No external dependencies needed for the framework itself
+
+# Document Converters - Install as needed
+# =========================================
+
+# Microsoft MarkItDown (recommended)
+markitdown[all]>=0.1.3
+
+# PDF Libraries
+PyPDF2>=3.0.0
+pdfplumber>=0.11.0
+pymupdf>=1.23.0  # aka fitz
+pdfminer.six>=20231228
+
+# OCR (requires system packages)
+# tesseract-ocr must be installed on system
+# Ubuntu/Debian: apt-get install tesseract-ocr
+# macOS: brew install tesseract
+pytesseract>=0.3.10
+pdf2image>=1.16.0
+Pillow>=10.0.0
+
+# Apache Tika (requires Java)
+# Install Java first
+tika>=2.6.0
+
+# Pandoc wrapper (requires pandoc system package)
+# Ubuntu/Debian: apt-get install pandoc
+# macOS: brew install pandoc
+pypandoc>=1.12
+
+# Multi-format extraction
+textract>=1.6.5
+
+# Unstructured (heavy dependencies)
+unstructured[all-docs]>=0.10.0
+
+# Optional: Advanced text analysis
+python-Levenshtein>=0.21.0  # Fast string comparison
+fuzzywuzzy>=0.18.0  # Fuzzy string matching
