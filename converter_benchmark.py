@@ -49,10 +49,21 @@ class ComparisonMetrics:
 class DocumentConverterBenchmark:
     """Main benchmark class for testing document converters"""
     
-    def __init__(self, output_dir: str = "benchmark_results"):
+    def __init__(self, output_dir: str = "benchmark_results",
+                 visualize_blocks: bool = False,
+                 viz_output_dir: Optional[str] = None,
+                 viz_dpi: int = 200,
+                 viz_iou_thr: float = 0.5,
+                 viz_export_blocks: bool = False):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.results: List[ConversionResult] = []
+        # Visualization config
+        self.visualize_blocks = visualize_blocks
+        self.viz_output_dir = Path(viz_output_dir) if viz_output_dir else self.output_dir / 'visual'
+        self.viz_dpi = viz_dpi
+        self.viz_iou_thr = viz_iou_thr
+        self.viz_export_blocks = viz_export_blocks
         
     def _calculate_text_metrics(self, text: str) -> Tuple[int, int, int]:
         """Calculate basic text metrics"""
@@ -177,9 +188,16 @@ class DocumentConverterBenchmark:
         
         # Generate comparison report
         report = self._generate_report(baseline_converter)
-        
+
         # Save results
         self._save_results(report)
+
+        # Optional visualization
+        if self.visualize_blocks:
+            try:
+                self._run_visualization()
+            except Exception as e:
+                print(f"[X] Visualization failed: {e}")
         
         return report
     
@@ -332,6 +350,37 @@ class DocumentConverterBenchmark:
                     f.write(f"| {r['converter']} | {status} | {r['time']:.3f} | "
                            f"{r['chars']} | {r['words']} |\n")
                 f.write("\n")
+            
+            if self.visualize_blocks:
+                f.write("\n## Visual Coverage\n\n")
+                f.write("Visual overlays and metrics generated. See the 'visual' output folder for images and JSON.\n")
+                f.write("\n")
+
+    def _run_visualization(self):
+        """Generate visual overlays and coverage metrics per document."""
+        from visualizer import Visualizer
+        # Group block data by file and engine
+        per_file: Dict[str, Dict[str, Dict[int, List[Dict]]]] = {}
+        for r in self.results:
+            if not r.success:
+                continue
+            if r.metadata and isinstance(r.metadata, dict):
+                blocks = r.metadata.get('blocks_per_page')
+                if blocks:
+                    per_file.setdefault(r.file_path, {})[r.converter_name] = blocks
+        if not per_file:
+            print("[i] No block data available for visualization.")
+            return
+        for file_path, engines_pages in per_file.items():
+            out_dir = self.viz_output_dir / os.path.splitext(os.path.basename(file_path))[0]
+            out_dir.mkdir(parents=True, exist_ok=True)
+            viz = Visualizer(output_dir=out_dir, dpi=self.viz_dpi, iou_thr=self.viz_iou_thr)
+            metrics = viz.process_document(
+                pdf_path=file_path,
+                per_engine_blocks_norm=engines_pages,
+                export_blocks_json=self.viz_export_blocks,
+            )
+            print(f"[i] Visual metrics saved to: {metrics['output_dir']}/visual_metrics.json")
     
     def print_summary(self):
         """Print summary to console"""

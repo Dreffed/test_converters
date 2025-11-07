@@ -104,34 +104,58 @@ class ConverterImplementations:
     def pymupdf_converter(file_path: str, **kwargs) -> Dict:
         """Convert using PyMuPDF (fitz)"""
         import fitz  # PyMuPDF
-        
+
         text_parts = []
-        
+
         doc = fitz.open(file_path)
-        
+
         metadata = {
             'pages': doc.page_count,
             'title': doc.metadata.get('title', ''),
             'author': doc.metadata.get('author', '')
         }
-        
+
         try:
+            blocks_per_page = {}
             for page_num in range(doc.page_count):
                 try:
                     page = doc[page_num]
                     text = page.get_text()
                     if text:
                         text_parts.append(text)
+                    # Extract blocks and normalize to page size (0..1)
+                    try:
+                        blks = page.get_text("blocks") or []
+                        rects = []
+                        pw, ph = page.rect.width, page.rect.height
+                        if pw and ph:
+                            for b in blks:
+                                if len(b) >= 4:
+                                    x0, y0, x1, y1 = float(b[0]), float(b[1]), float(b[2]), float(b[3])
+                                    # normalize
+                                    rects.append({
+                                        'x0': max(0.0, min(1.0, x0 / pw)),
+                                        'y0': max(0.0, min(1.0, y0 / ph)),
+                                        'x1': max(0.0, min(1.0, x1 / pw)),
+                                        'y1': max(0.0, min(1.0, y1 / ph)),
+                                    })
+                        if rects:
+                            blocks_per_page[page_num] = rects
+                    except Exception:
+                        pass
                 except Exception as e:
                     if kwargs.get('verbose'):
                         print(f"Warning: Failed to extract page {page_num}: {e}")
         finally:
             doc.close()
-        
-        return {
+
+        result = {
             'text': '\n\n'.join(text_parts),
             **metadata
         }
+        if blocks_per_page:
+            result['blocks_per_page'] = blocks_per_page
+        return result
     
     @staticmethod
     def tika_converter(file_path: str, **kwargs) -> Dict:

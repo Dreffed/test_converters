@@ -101,6 +101,35 @@ Examples:
         action='store_true',
         help='Verbose output with detailed errors'
     )
+
+    # Visualization flags
+    parser.add_argument(
+        '--visualize-blocks',
+        action='store_true',
+        help='Render page images with block overlays and compute coverage metrics'
+    )
+    parser.add_argument(
+        '--viz-output-dir',
+        default=None,
+        help='Output directory for visual artifacts (default: <output-dir>/visual)'
+    )
+    parser.add_argument(
+        '--viz-dpi',
+        type=int,
+        default=200,
+        help='DPI to render page images for visualization (default: 200)'
+    )
+    parser.add_argument(
+        '--viz-iou-thr',
+        type=float,
+        default=0.5,
+        help='IoU threshold for block coverage matching (default: 0.5)'
+    )
+    parser.add_argument(
+        '--viz-export-blocks',
+        action='store_true',
+        help='Export canonical union blocks JSON per document for future UI'
+    )
     
     args = parser.parse_args()
     
@@ -208,7 +237,14 @@ Examples:
     print(f"Output: {args.output_dir}")
     print(f"{'='*80}\n")
     
-    benchmark = DocumentConverterBenchmark(output_dir=args.output_dir)
+    benchmark = DocumentConverterBenchmark(
+        output_dir=args.output_dir,
+        visualize_blocks=args.visualize_blocks,
+        viz_output_dir=args.viz_output_dir,
+        viz_dpi=args.viz_dpi,
+        viz_iou_thr=args.viz_iou_thr,
+        viz_export_blocks=args.viz_export_blocks,
+    )
     
     baseline = args.baseline if args.baseline in converters else None
     report = benchmark.run_benchmark_suite(
