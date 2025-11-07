@@ -157,11 +157,19 @@ class ConverterImplementations:
         from pdf2image import convert_from_path
         
         # Convert PDF to images
-        images = convert_from_path(
-            file_path,
-            dpi=kwargs.get('dpi', 300),
-            fmt=kwargs.get('fmt', 'png')
-        )
+        try:
+            images = convert_from_path(
+                file_path,
+                dpi=kwargs.get('dpi', 300),
+                fmt=kwargs.get('fmt', 'png'),
+                poppler_path=kwargs.get('poppler_path', None)
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "pdf2image failed to convert PDF to images. "
+                "On Windows, ensure Poppler is installed and pass --poppler-path to run_benchmark.py. "
+                f"Original error: {e}"
+            )
         
         text_parts = []
         lang = kwargs.get('lang', 'eng')
@@ -309,10 +317,12 @@ def get_available_converters(test_imports: bool = True) -> Dict:
                 import unstructured
             
             available[name] = func
-            print(f"✅ {name:15} - Available")
+            print(f"[OK] {name:15} - Available")
             
-        except ImportError as e:
-            print(f"❌ {name:15} - Not installed ({e.name})")
+        except Exception as e:
+            err_type = type(e).__name__
+            err_msg = getattr(e, 'name', None) or str(e).splitlines()[0]
+            print(f"[X] {name:15} - Unavailable ({err_type}: {err_msg})")
     
     return available
 

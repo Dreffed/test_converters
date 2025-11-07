@@ -91,6 +91,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--poppler-path',
+        default=None,
+        help='Path to Poppler bin directory (Windows) for pdf2image'
+    )
+    
+    parser.add_argument(
         '--verbose',
         action='store_true',
         help='Verbose output with detailed errors'
@@ -140,6 +146,11 @@ Examples:
         else:
             print(f"??  Warning: No files matched: {file_pattern}")
     
+    if args.verbose and test_files:
+        print("\nResolved input files:")
+        for f in test_files:
+            print(f" - {f}")
+
     if not test_files:
         print("? Error: No valid files found!")
         return 1
@@ -173,13 +184,19 @@ Examples:
     converter_kwargs = {
         'verbose': args.verbose,
         'extract_tables': args.extract_tables,
-        'dpi': args.tesseract_dpi
+        'dpi': args.tesseract_dpi,
+        'poppler_path': args.poppler_path
     }
     
     # Wrap converters with kwargs
     converters = {}
     for name, func in converters_to_test.items():
         converters[name] = lambda fp, f=func: f(fp, **converter_kwargs)
+    
+    if args.verbose:
+        print("\nConverters to test:")
+        for name in converters.keys():
+            print(f" - {name}")
     
     # Run benchmark
     print(f"\n{'='*80}")
@@ -211,4 +228,3 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
-

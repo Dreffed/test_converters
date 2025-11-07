@@ -119,11 +119,11 @@ class DocumentConverterBenchmark:
                 text_content = str(result)
             
             success = True
-            print(f"✅ Success")
+            print(f"[OK] Success")
             
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}"
-            print(f"❌ Failed: {error_msg}")
+            print(f"[X] Failed: {error_msg}")
             if kwargs.get('verbose'):
                 traceback.print_exc()
         
@@ -277,25 +277,25 @@ class DocumentConverterBenchmark:
         
         # Save JSON report
         json_path = self.output_dir / f"benchmark_report_{timestamp}.json"
-        with open(json_path, 'w') as f:
+        with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2)
-        print(f"\n📊 Report saved: {json_path}")
+        print(f"\n[i] Report saved: {json_path}")
         
         # Save detailed results
         detailed_path = self.output_dir / f"detailed_results_{timestamp}.json"
         detailed_results = [asdict(r) for r in self.results]
-        with open(detailed_path, 'w') as f:
+        with open(detailed_path, 'w', encoding='utf-8') as f:
             json.dump(detailed_results, f, indent=2)
-        print(f"📊 Detailed results saved: {detailed_path}")
+        print(f"[i] Detailed results saved: {detailed_path}")
         
         # Generate markdown summary
         md_path = self.output_dir / f"summary_{timestamp}.md"
         self._generate_markdown_summary(report, md_path)
-        print(f"📊 Markdown summary saved: {md_path}")
+        print(f"[i] Markdown summary saved: {md_path}")
     
     def _generate_markdown_summary(self, report: Dict, output_path: Path):
         """Generate human-readable markdown summary"""
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write("# Document Converter Benchmark Report\n\n")
             f.write(f"**Generated:** {report['timestamp']}\n\n")
             f.write(f"**Total Tests:** {report['total_tests']}\n\n")
@@ -328,7 +328,7 @@ class DocumentConverterBenchmark:
                 f.write("|-----------|---------|----------|------------|-------|\n")
                 
                 for r in results:
-                    status = "✅" if r['success'] else "❌"
+                    status = "OK" if r['success'] else "FAIL"
                     f.write(f"| {r['converter']} | {status} | {r['time']:.3f} | "
                            f"{r['chars']} | {r['words']} |\n")
                 f.write("\n")
