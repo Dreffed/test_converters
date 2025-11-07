@@ -26,3 +26,5 @@ Thumbs.db
 # Project outputs
 benchmark_results/
 
+data/
+
