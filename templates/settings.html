@@ -31,23 +31,28 @@
   <h3>Colors</h3>
   <fieldset>
     <legend>Parser Tools</legend>
-    {% set tools = (config.colors.tools or {}) %}
+    {% set colors = config.get('colors', {}) %}
+    {% set tools = colors.get('tools', {}) %}
     {% for name, col in tools.items() %}
       <label for="color_tool_{{ name }}">{{ name }}:
         <input type="color" id="color_tool_{{ name }}" name="color_tool_{{ name }}" value="{{ col }}" />
       </label>
     {% endfor %}
+    {% if tools|length == 0 %}
+      <p style="font-size: 12px; color: #666;">No tool colors configured yet. Save once from the viewer to initialize, or add tools in config.json under colors.tools.</p>
+    {% endif %}
   </fieldset>
   <fieldset>
     <legend>Overlays</legend>
+    {% set overlays = colors.get('overlays', {}) %}
     <label for="color_overlay_text">Text (fallback):
-      <input type="color" id="color_overlay_text" name="color_overlay_text" value="{{ config.colors.overlays.text }}" />
+      <input type="color" id="color_overlay_text" name="color_overlay_text" value="{{ overlays.get('text', '#00FFFF') }}" />
     </label>
     <label for="color_overlay_merged">Merged:
-      <input type="color" id="color_overlay_merged" name="color_overlay_merged" value="{{ config.colors.overlays.merged }}" />
+      <input type="color" id="color_overlay_merged" name="color_overlay_merged" value="{{ overlays.get('merged', '#FFA500') }}" />
     </label>
     <label for="color_overlay_tables">Tables:
-      <input type="color" id="color_overlay_tables" name="color_overlay_tables" value="{{ config.colors.overlays.tables }}" />
+      <input type="color" id="color_overlay_tables" name="color_overlay_tables" value="{{ overlays.get('tables', '#32CD32') }}" />
     </label>
   </fieldset>
   <h3>OCR</h3>
