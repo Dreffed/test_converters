@@ -79,9 +79,17 @@
     });
     // Legend
     legendDiv.innerHTML = '';
-    Object.entries(state.colors).forEach(([tool,color])=>{
+    const toolMap = (state.colors && state.colors.tools) ? state.colors.tools : {};
+    Object.entries(toolMap).forEach(([tool,color])=>{
       const div = document.createElement('div'); div.className='item';
       div.innerHTML = `<span class="swatch" style="background:${color}"></span> <span>${tool}</span>`;
+      legendDiv.appendChild(div);
+    });
+    const overlays = (state.colors && state.colors.overlays) ? state.colors.overlays : {};
+    [['merged','Merged'], ['tables','Tables']].forEach(([key,label])=>{
+      const color = overlays[key]; if(!color) return;
+      const div = document.createElement('div'); div.className='item';
+      div.innerHTML = `<span class="swatch" style="background:${color}"></span> <span>${label}</span>`;
       legendDiv.appendChild(div);
     });
     if(state.docs.length){ selectDoc(state.docs[0].id); }
@@ -231,7 +239,7 @@
         const g = document.createElementNS('http://www.w3.org/2000/svg','g');
         g.setAttribute('data-tool', tool);
         gRoot.appendChild(g);
-        const color = state.colors[tool] || '#00FFFF';
+        const color = (state.colors && state.colors.tools && state.colors.tools[tool]) || (state.colors && state.colors.overlays && state.colors.overlays.text) || '#00FFFF';
         const textColor = (function(){
         const hex = color.replace('#','');
         const h = hex.length===3 ? hex.split('').map(c=>c+c).join('') : hex;
@@ -290,7 +298,7 @@
         const g = document.createElementNS('http://www.w3.org/2000/svg','g');
         g.setAttribute('data-tool','merged');
         gRoot.appendChild(g);
-        const color = '#FFA500';
+        const color = (state.colors && state.colors.overlays && state.colors.overlays.merged) || '#FFA500';
         const textColor = '#000';
         merged.groups.forEach((m,i)=>{
           const {x,y,w,h} = m.bbox || {}; if(w<=0||h<=0) return;
@@ -308,6 +316,28 @@
       }
     }
     img.style.filter = toggleGray.checked? 'grayscale(100%)' : 'none';
+    // Render table bboxes if toggled
+    if (toggleTableBoxes && toggleTableBoxes.checked) {
+      const key = `${state.docId}:${state.page}`;
+      const tables = state.tablesCache.get(key) || [];
+      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('data-tool','tables');
+      gRoot.appendChild(g);
+      const color = (state.colors && state.colors.overlays && state.colors.overlays.tables) || '#32CD32';
+      const textColor = '#000';
+      tables.forEach((tb, i)=>{
+        const {x,y,w,h} = tb.bbox || {}; if(w<=0||h<=0) return;
+        const xpx=x*img.naturalWidth, ypx=y*img.naturalHeight, wpx=w*img.naturalWidth, hpx=h*img.naturalHeight;
+        const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+        r.setAttribute('class','bbox'); r.setAttribute('x', String(xpx)); r.setAttribute('y', String(ypx)); r.setAttribute('width', String(wpx)); r.setAttribute('height', String(hpx)); r.setAttribute('stroke', color);
+        g.appendChild(r);
+        if(toggleNums && toggleNums.checked){
+          const radius=9, cx=xpx+radius+3, cy=ypx+radius+3;
+          const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('class','bbox-badge-circle'); c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(radius)); c.setAttribute('fill', color); g.appendChild(c);
+          const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('class','bbox-badge-text'); t.setAttribute('x', String(cx)); t.setAttribute('y', String(cy)); t.setAttribute('fill', textColor); t.textContent=String(i+1); g.appendChild(t);
+        }
+      });
+    }
   }
 
   function intersect(a,b){

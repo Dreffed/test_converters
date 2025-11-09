@@ -54,6 +54,21 @@ CONFIG = load_json(CONFIG_FILE, {
     "viz": {"dpi": 200, "iou_thr": 0.5, "match": "bipartite", "renderer": "auto", "export_blocks": False},
     "tesseract_dpi": 300,
     "poppler_path": os.environ.get("POPPLER_PATH"),
+    "colors": {
+        "tools": {
+            'pymupdf': '#00FF00',
+            'pdfplumber': '#FF0000',
+            'pypdf2': '#0000FF',
+            'tesseract': '#FFFF00',
+            'markitdown': '#FF00FF',
+            'pdfminer': '#00FFFF',
+        },
+        "overlays": {
+            "text": "#00FFFF",
+            "merged": "#FFA500",
+            "tables": "#32CD32"
+        }
+    }
 })
 
 
@@ -202,7 +217,7 @@ def settings_page(request: Request):
 
 
 @app.post("/settings")
-def save_settings(
+async def save_settings(request: Request,
     baseline: str = Form("tesseract"),
     converters: str = Form(""),
     visualize: Optional[str] = Form(None),
@@ -228,6 +243,27 @@ def save_settings(
         "tesseract_dpi": tesseract_dpi,
         "poppler_path": poppler_path or None,
     })
+    # Parse dynamic color fields
+    try:
+        form = await request.form()
+        colors = CONFIG.setdefault('colors', {})
+        tools_map = colors.setdefault('tools', {})
+        overlays = colors.setdefault('overlays', {})
+        for k, v in form.items():
+            if not isinstance(v, str):
+                continue
+            if k.startswith('color_tool_'):
+                name = k[len('color_tool_'):]
+                if name:
+                    tools_map[name] = v
+            elif k == 'color_overlay_text':
+                overlays['text'] = v
+            elif k == 'color_overlay_merged':
+                overlays['merged'] = v
+            elif k == 'color_overlay_tables':
+                overlays['tables'] = v
+    except Exception:
+        pass
     save_json(CONFIG_FILE, CONFIG)
     return RedirectResponse(url="/settings", status_code=303)
 
@@ -512,7 +548,12 @@ def api_docs(run_id: int):
             'pages': pages,
             'engines': sorted(engines)
         })
-    return { 'docs': docs, 'colors': _COLOR_MAP }
+    # Colors from CONFIG
+    colors = CONFIG.get('colors') or {}
+    # If tools map missing, fall back to defaults
+    tool_colors = colors.get('tools') or {}
+    overlay_colors = colors.get('overlays') or {}
+    return { 'docs': docs, 'colors': { 'tools': tool_colors, 'overlays': overlay_colors } }
 
 
 def _doc_dir_for(run_id: int, doc: str) -> Path:

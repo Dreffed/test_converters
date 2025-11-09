@@ -28,6 +28,28 @@
     </select>
   </label>
   <label><input type="checkbox" name="viz_export_blocks" {% if config.viz.export_blocks %}checked{% endif %}/> Export union blocks JSON</label>
+  <h3>Colors</h3>
+  <fieldset>
+    <legend>Parser Tools</legend>
+    {% set tools = (config.colors.tools or {}) %}
+    {% for name, col in tools.items() %}
+      <label for="color_tool_{{ name }}">{{ name }}:
+        <input type="color" id="color_tool_{{ name }}" name="color_tool_{{ name }}" value="{{ col }}" />
+      </label>
+    {% endfor %}
+  </fieldset>
+  <fieldset>
+    <legend>Overlays</legend>
+    <label for="color_overlay_text">Text (fallback):
+      <input type="color" id="color_overlay_text" name="color_overlay_text" value="{{ config.colors.overlays.text }}" />
+    </label>
+    <label for="color_overlay_merged">Merged:
+      <input type="color" id="color_overlay_merged" name="color_overlay_merged" value="{{ config.colors.overlays.merged }}" />
+    </label>
+    <label for="color_overlay_tables">Tables:
+      <input type="color" id="color_overlay_tables" name="color_overlay_tables" value="{{ config.colors.overlays.tables }}" />
+    </label>
+  </fieldset>
   <h3>OCR</h3>
   <label>Tesseract DPI: <input type="number" name="tesseract_dpi" value="{{ config.tesseract_dpi }}"/></label>
   <label>Poppler Path: <input name="poppler_path" value="{{ config.poppler_path or '' }}"/></label>
@@ -35,4 +57,3 @@
   <button class="btn" type="submit">Save</button>
 </form>
 {% endblock %}
-
