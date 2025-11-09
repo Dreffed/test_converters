@@ -18,7 +18,12 @@
 .bbox-badge-circle { stroke: #ffffff; stroke-width: 1.2; }
 .bbox-badge-text { font-size: 10.5px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0,0,0,0.35); stroke-width: 0.8; }
 .bbox-selected { fill: rgba(0,128,255,0.12); stroke: #0080ff; stroke-width: 3; pointer-events: none; }
+.bbox-redundant { stroke-dasharray: 4 3; stroke: #888; }
+.bbox-unique { stroke: #ff00aa; stroke-width: 2.5; }
+.cons-group { stroke: #8a2be2; stroke-width: 2; fill: none; }
 .bottom-panel { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
+.bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.bottom-grid .text-col, .bottom-grid .tables-col { min-width: 0; }
 .tabs { display: flex; gap: 8px; margin-bottom: 6px; }
 .tabs button[aria-selected="true"] { font-weight: 600; }
 .panel { display: none; }
@@ -32,6 +37,7 @@
   .viewer-main { order: 2; }
   .viewport { height: 50vh; }
   .legend { grid-template-columns: repeat(3, 1fr); }
+  .bottom-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -39,4 +45,5 @@
   .viewport { height: 45vh; }
   .legend { grid-template-columns: repeat(2, 1fr); }
   .group label, .group input, .group select { max-width: 100%; }
+  .bottom-grid { grid-template-columns: 1fr; }
 }

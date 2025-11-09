@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -501,6 +501,14 @@ def runs():
     return {"runs": STATE.get("runs", [])}
 
 
+@app.get("/api/runs/{run_id}")
+def get_run_api(run_id: int):
+    r = get_run(run_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return r
+
+
 @app.get("/api/artifacts")
 def artifact(path: str):
     p = Path(path)
@@ -631,6 +639,81 @@ def _load_boxes_by_engine(doc_dir: Path) -> Optional[Dict]:
         except Exception:
             return None
     return None
+
+
+def _contains(a: Dict, b: Dict) -> bool:
+    return (a['x'] <= b['x'] and a['y'] <= b['y'] and (a['x'] + a['w']) >= (b['x'] + b['w']) and (a['y'] + a['h']) >= (b['y'] + b['h']))
+
+
+def _overlaps(a: Dict, b: Dict) -> bool:
+    ax1 = a['x'] + a['w']; ay1 = a['y'] + a['h']; bx1 = b['x'] + b['w']; by1 = b['y'] + b['h']
+    iw = max(0.0, min(ax1, bx1) - max(a['x'], b['x']))
+    ih = max(0.0, min(ay1, by1) - max(a['y'], b['y']))
+    return iw * ih > 0
+
+
+def _union(a: Dict, b: Dict) -> Dict:
+    x = min(a['x'], b['x']); y = min(a['y'], b['y'])
+    x1 = max(a['x'] + a['w'], b['x'] + b['w']); y1 = max(a['y'] + a['h'], b['y'] + b['h'])
+    return {'x': x, 'y': y, 'w': max(0.0, x1 - x), 'h': max(0.0, y1 - y)}
+
+
+def _normalized_words_from_pdf(pdf_path: Path, page: int) -> List[Dict]:
+    try:
+        import fitz
+        doc = fitz.open(str(pdf_path))
+        try:
+            p = doc[page]
+            rect = p.rect
+            pw, ph = float(rect.width), float(rect.height)
+            words = p.get_text('words') or []
+            out = []
+            for w in words:
+                if len(w) < 5:
+                    continue
+                x0, y0, x1, y1, txt = float(w[0]), float(w[1]), float(w[2]), float(w[3]), str(w[4] or '')
+                if not txt:
+                    continue
+                out.append({
+                    'x': max(0.0, min(1.0, x0 / pw)),
+                    'y': max(0.0, min(1.0, y0 / ph)),
+                    'w': max(0.0, min(1.0, (x1 - x0) / pw)),
+                    'h': max(0.0, min(1.0, (y1 - y0) / ph)),
+                    'text': txt
+                })
+            return out
+        finally:
+            doc.close()
+    except Exception:
+        try:
+            import pdfplumber
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                p = pdf.pages[page]
+                pw, ph = float(p.width), float(p.height)
+                words = p.extract_words() or []
+                out = []
+                for w in words:
+                    x0 = float(w.get('x0', 0)); y0 = float(w.get('top', 0)); x1 = float(w.get('x1', 0)); y1 = float(w.get('bottom', y0))
+                    txt = str(w.get('text', '') or '')
+                    if not txt:
+                        continue
+                    out.append({
+                        'x': max(0.0, min(1.0, x0 / pw)), 'y': max(0.0, min(1.0, y0 / ph)),
+                        'w': max(0.0, min(1.0, (x1 - x0) / pw)), 'h': max(0.0, min(1.0, (y1 - y0) / ph)),
+                        'text': txt
+                    })
+                return out
+        except Exception:
+            return []
+
+
+def _text_in_bbox(words_norm: List[Dict], bb: Dict) -> str:
+    res = []
+    for w in words_norm:
+        if _overlaps(bb, {'x': w['x'], 'y': w['y'], 'w': w['w'], 'h': w['h']}):
+            res.append(w['text'])
+    # Rough ordering is fine; words are already page-order
+    return ' '.join(res).strip()
 
 
 def _load_boxes_from_detailed(run_id: int, doc: str) -> Dict[int, Dict[str, List[Dict]]]:
@@ -1274,6 +1357,135 @@ async def api_merge_boxes(run_id: int, doc: str, page: int, request: Request):
         bb['x']=max(0.0,min(1.0,bb['x'])); bb['y']=max(0.0,min(1.0,bb['y']))
         bb['w']=max(0.0,min(1.0,bb['w'])); bb['h']=max(0.0,min(1.0,bb['h']))
     return {'mode': mode, 'groups': groups}
+
+
+@app.post("/api/runs/{run_id}/doc/{doc}/page/{page}/consolidate")
+async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(...)):
+    doc_dir = _doc_dir_for(run_id, doc)
+    boxes_by_engine = _load_boxes_by_engine(doc_dir)
+    if boxes_by_engine is None:
+        boxes_by_engine = _load_boxes_from_detailed(run_id, doc)
+    page_data = boxes_by_engine.get(str(page)) or boxes_by_engine.get(page) or {}
+    items = list(page_data.get(tool, []))
+    # Words for text coverage
+    pdf_path = _find_pdf_for_doc(run_id, doc)
+    words = _normalized_words_from_pdf(pdf_path, page) if pdf_path else []
+    # Build structures
+    bboxes = []
+    for b in items:
+        bb = b.get('bbox') or {}
+        entry = {
+            'id': b.get('id'),
+            'bbox': {'x': float(bb.get('x', 0)), 'y': float(bb.get('y', 0)), 'w': float(bb.get('w', 0)), 'h': float(bb.get('h', 0))},
+            'text': _text_in_bbox(words, {'x': float(bb.get('x', 0)), 'y': float(bb.get('y', 0)), 'w': float(bb.get('w', 0)), 'h': float(bb.get('h', 0))}),
+            'redundant': False,
+            'unique_extra': False,
+            'merged_group': None
+        }
+        bboxes.append(entry)
+    # Containment and redundancy / unique-extra
+    for i in range(len(bboxes)):
+        for j in range(len(bboxes)):
+            if i == j:
+                continue
+            A = bboxes[i]; B = bboxes[j]
+            if _contains(A['bbox'], B['bbox']):
+                # Compute inner text union for A
+                # Check if A has extra text beyond B
+                txtA = set(A['text'].split()) if A['text'] else set()
+                txtB = set(B['text'].split()) if B['text'] else set()
+                extra = txtA - txtB
+                if extra:
+                    A['unique_extra'] = True
+                else:
+                    A['redundant'] = True
+    # Overlap merge groups (single-linkage on overlap)
+    groups = []
+    used = [False] * len(bboxes)
+    for i in range(len(bboxes)):
+        if used[i]:
+            continue
+        used[i] = True
+        members = [i]
+        gbb = dict(bboxes[i]['bbox'])
+        changed = True
+        while changed:
+            changed = False
+            for j in range(len(bboxes)):
+                if used[j]:
+                    continue
+                if _overlaps(gbb, bboxes[j]['bbox']):
+                    used[j] = True
+                    members.append(j)
+                    gbb = _union(gbb, bboxes[j]['bbox'])
+                    changed = True
+        if len(members) > 1:
+            gid = f"merged-p{page}-g{len(groups)+1}"
+            for m in members:
+                bboxes[m]['merged_group'] = gid
+            groups.append({'id': gid, 'bbox': gbb, 'members': [bboxes[m]['id'] for m in members]})
+    # Classify groups into paragraph/row/column (heuristic)
+    layout_groups = []
+    def classify(member_indices: List[int]) -> str:
+        xs = []; ys = []; widths = []; heights = []
+        for m in member_indices:
+            bb = bboxes[m]['bbox']
+            xs.append(bb['x']); ys.append(bb['y']); widths.append(bb['w']); heights.append(bb['h'])
+        import statistics
+        try:
+            std_x = statistics.pstdev(xs)
+            std_y = statistics.pstdev(ys)
+        except statistics.StatisticsError:
+            std_x = std_y = 0.0
+        if std_x < 0.01 and std_y > 0.02:
+            return 'column'
+        if std_y < 0.005 and std_x > 0.02:
+            return 'row'
+        return 'paragraph'
+    for g in groups:
+        # Map member ids back to indices
+        idxs = [next((i for i, b in enumerate(bboxes) if b['id'] == mid), -1) for mid in g['members']]
+        idxs = [i for i in idxs if i >= 0]
+        ltype = classify(idxs)
+        layout_groups.append({'type': ltype, 'bbox': g['bbox'], 'members': g['members']})
+
+    # Persist consolidated annotations next to doc_dir
+    cons_path = doc_dir / f"consolidated_{tool}.json"
+    try:
+        cons_all = {}
+        if cons_path.exists():
+            try:
+                cons_all = json.loads(cons_path.read_text(encoding='utf-8'))
+            except Exception:
+                cons_all = {}
+        cons_all[str(page)] = {
+            'boxes': bboxes,
+            'merged_groups': groups,
+            'layout_groups': layout_groups
+        }
+        cons_path.write_text(json.dumps(cons_all, indent=2), encoding='utf-8')
+    except Exception:
+        pass
+    return {
+        'page': page,
+        'tool': tool,
+        'boxes': bboxes,
+        'merged_groups': groups,
+        'layout_groups': layout_groups
+    }
+
+
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/consolidated")
+def api_get_consolidated(run_id: int, doc: str, page: int, tool: str):
+    doc_dir = _doc_dir_for(run_id, doc)
+    cons_path = doc_dir / f"consolidated_{tool}.json"
+    if cons_path.exists():
+        try:
+            data = json.loads(cons_path.read_text(encoding='utf-8'))
+            return data.get(str(page)) or {'boxes': [], 'merged_groups': [], 'layout_groups': []}
+        except Exception:
+            pass
+    return {'boxes': [], 'merged_groups': [], 'layout_groups': []}
 
 
 @app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/words")

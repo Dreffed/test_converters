@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Run #{{ run.id }}</h2>
-<p>Status: <strong>{{ run.status }}</strong></p>
+<p>Status: <strong id="runStatus">{{ run.status }}</strong></p>
 <p>Created: {{ run.created_at }}</p>
 <p>
   <button class="btn btn-danger" id="deleteRunBtn" data-run-id="{{ run.id }}">Delete Run</button>
@@ -44,5 +44,22 @@
       } catch { alert('Error deleting run'); }
     });
   }
+  // Poll status
+  const statusEl = document.getElementById('runStatus');
+  const runId = {{ run.id }};
+  let lastStatus = '{{ run.status }}';
+  async function poll(){
+    try{
+      const resp = await fetch(`/api/runs/${runId}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.status && data.status !== lastStatus){
+        lastStatus = data.status;
+        if (statusEl) statusEl.textContent = data.status;
+        if (data.status === 'done' || data.status === 'failed') { location.reload(); }
+      }
+    } catch {}
+  }
+  setInterval(poll, 3000);
 </script>
 {% endblock %}

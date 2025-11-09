@@ -316,6 +316,36 @@
       }
     }
     img.style.filter = toggleGray.checked? 'grayscale(100%)' : 'none';
+    // Consolidation overlays if any toggles enabled
+    const consTool = consToolSel ? consToolSel.value : null;
+    if (consTool && ((showConsRedundant && showConsRedundant.checked) || (showConsUnique && showConsUnique.checked) || (showConsGroups && showConsGroups.checked))){
+      // async render after fetch
+      (async () => {
+        const cons = await loadConsolidated(consTool);
+        if (!cons) return;
+        const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+        g.setAttribute('data-tool','consolidated'); gRoot.appendChild(g);
+        const boxes = cons.boxes || [];
+        boxes.forEach(b => {
+          const bb = b.bbox||{}; if (!bb.w || !bb.h) return;
+          const xpx=bb.x*img.naturalWidth, ypx=bb.y*img.naturalHeight, wpx=bb.w*img.naturalWidth, hpx=bb.h*img.naturalHeight;
+          if (showConsRedundant && showConsRedundant.checked && b.redundant){
+            const r1 = document.createElementNS('http://www.w3.org/2000/svg','rect'); r1.setAttribute('class','bbox bbox-redundant'); r1.setAttribute('x', String(xpx)); r1.setAttribute('y', String(ypx)); r1.setAttribute('width', String(wpx)); r1.setAttribute('height', String(hpx)); g.appendChild(r1);
+          }
+          if (showConsUnique && showConsUnique.checked && b.unique_extra){
+            const r2 = document.createElementNS('http://www.w3.org/2000/svg','rect'); r2.setAttribute('class','bbox bbox-unique'); r2.setAttribute('x', String(xpx)); r2.setAttribute('y', String(ypx)); r2.setAttribute('width', String(wpx)); r2.setAttribute('height', String(hpx)); g.appendChild(r2);
+          }
+        });
+        if (showConsGroups && showConsGroups.checked){
+          const grp = cons.layout_groups || [];
+          grp.forEach((ginfo) => {
+            const bb=ginfo.bbox||{}; if (!bb.w || !bb.h) return;
+            const xpx=bb.x*img.naturalWidth, ypx=bb.y*img.naturalHeight, wpx=bb.w*img.naturalWidth, hpx=bb.h*img.naturalHeight;
+            const rr = document.createElementNS('http://www.w3.org/2000/svg','rect'); rr.setAttribute('class','cons-group'); rr.setAttribute('x', String(xpx)); rr.setAttribute('y', String(ypx)); rr.setAttribute('width', String(wpx)); rr.setAttribute('height', String(hpx)); rr.setAttribute('data-group-type', ginfo.type || 'group'); g.appendChild(rr);
+          });
+        }
+      })();
+    }
     // Render table bboxes if toggled
     if (toggleTableBoxes && toggleTableBoxes.checked) {
       const key = `${state.docId}:${state.page}`;

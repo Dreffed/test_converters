@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Run #{{ run.id }} — Composite Viewer</h2>
+{% if run.status != 'done' %}
+<div class="banner" id="runBanner">Run status: <strong id="runStatus">{{ run.status }}</strong>. The page will refresh when complete.</div>
+{% endif %}
 <p>
   <button class="btn btn-danger" id="deleteRunBtn" data-run-id="{{ run.id }}">Delete Run</button>
   <a class="btn" href="/">Back</a>
@@ -44,6 +47,16 @@
       <div class="row"><input id="toggleMerged" type="checkbox"/> <label for="toggleMerged">Merged BBoxes</label></div>
       <div class="row"><input id="toggleTableBoxes" type="checkbox"/> <label for="toggleTableBoxes">Table BBoxes</label></div>
       </div>
+    <div class="group">
+      <label for="consTool">Consolidation Tool</label>
+      <select id="consTool"></select>
+      <div class="row">
+        <button id="runCons">Run Consolidation</button>
+      </div>
+      <div class="row"><input id="showConsRedundant" type="checkbox"/> <label for="showConsRedundant">Show Redundant</label></div>
+      <div class="row"><input id="showConsUnique" type="checkbox"/> <label for="showConsUnique">Show Unique-Extra</label></div>
+      <div class="row"><input id="showConsGroups" type="checkbox"/> <label for="showConsGroups">Show Groups</label></div>
+    </div>
     </div>
     <div class="group">
       <button id="exportBtn">Export Package</button>
@@ -72,13 +85,16 @@
       </div>
     </div>
     <section class="bottom-panel">
-      <div class="tabs" id="resultTabs"></div>
-      <div class="tab-panels" id="resultPanels"></div>
-      <hr/>
-      <div>
-        <h4>Tables (current page)</h4>
-        <div id="tablesTabs" class="tabs"></div>
-        <div id="tablesPanels" class="tab-panels"></div>
+      <div class="bottom-grid">
+        <div class="text-col">
+          <div class="tabs" id="resultTabs"></div>
+          <div class="tab-panels" id="resultPanels"></div>
+        </div>
+        <div class="tables-col">
+          <h4>Tables (current page)</h4>
+          <div id="tablesTabs" class="tabs"></div>
+          <div id="tablesPanels" class="tab-panels"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -102,6 +118,25 @@
         } catch { alert('Error deleting run'); }
       });
     }
+  })();
+  // Poll status to refresh when done
+  (function(){
+    const runId = {{ run.id }};
+    const banner = document.getElementById('runBanner');
+    const statusEl = document.getElementById('runStatus');
+    let last = '{{ run.status }}';
+    async function poll(){
+      try{
+        const r = await fetch(`/api/runs/${runId}`);
+        if(!r.ok) return; const data = await r.json();
+        if (data.status && data.status !== last){
+          last = data.status;
+          if (statusEl) statusEl.textContent = data.status;
+          if (data.status === 'done' || data.status === 'failed') { location.reload(); }
+        }
+      } catch {}
+    }
+    setInterval(poll, 3000);
   })();
 </script>
 {% endblock %}

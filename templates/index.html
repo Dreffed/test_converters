@@ -16,16 +16,17 @@
 
 <section>
   <h2>Recent Runs</h2>
-  <table>
+  <div class="table-responsive">
+  <table id="runsTable">
     <thead>
       <tr><th>ID</th><th>Created</th><th>Status</th><th>Files</th><th>Converters</th><th>Actions</th></tr>
     </thead>
     <tbody>
       {% for r in runs %}
-        <tr>
+        <tr data-run-id="{{ r.id }}" data-run-status="{{ r.status }}">
           <td>{{ r.id }}</td>
           <td>{{ r.created_at }}</td>
-          <td class="status {{ r.status }}">{{ r.status }}</td>
+          <td class="status {{ r.status }}"><span class="status-text">{{ r.status }}</span></td>
           <td>{{ r.files|length }}</td>
           <td>{{ r.converters|length }}</td>
           <td>
@@ -38,6 +39,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 <script>
   document.querySelectorAll('.delete-run').forEach(btn => {
@@ -51,5 +53,27 @@
       } catch { alert('Error deleting run'); }
     });
   });
+  // Poll for run status updates
+  async function pollRuns(){
+    try{
+      const resp = await fetch('/api/runs');
+      if(!resp.ok) return;
+      const data = await resp.json();
+      const runs = data.runs || [];
+      const map = new Map(runs.map(r => [String(r.id), r]));
+      document.querySelectorAll('#runsTable tbody tr').forEach(tr => {
+        const id = tr.getAttribute('data-run-id');
+        const cur = map.get(id);
+        if(!cur) return;
+        const prev = tr.getAttribute('data-run-status');
+        if (prev !== cur.status){
+          tr.setAttribute('data-run-status', cur.status);
+          const td = tr.querySelector('.status');
+          if (td){ td.className = 'status ' + cur.status; const span = td.querySelector('.status-text'); if (span) span.textContent = cur.status; }
+        }
+      });
+    } catch {}
+  }
+  setInterval(pollRuns, 3000);
   </script>
 {% endblock %}

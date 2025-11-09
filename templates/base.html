@@ -5,14 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>{{ title or 'Converter Benchmark UI' }}</title>
     <style>
+      :root { --gap: 16px; }
       body { font-family: system-ui, sans-serif; margin: 1.5rem; }
       header { margin-bottom: 1rem; }
       nav a { margin-right: 1rem; }
-      table { border-collapse: collapse; width: 100%; }
+      .table-responsive { overflow-x: auto; width: 100%; }
+      table { border-collapse: collapse; width: 100%; min-width: 640px; }
       th, td { padding: 0.5rem; border-bottom: 1px solid #ddd; text-align: left; }
       .status { font-weight: 600; }
       .ok { color: #0a0; } .fail { color: #a00; } .pending { color: #a60; }
       .btn { display: inline-block; padding: 0.4rem 0.8rem; border: 1px solid #444; border-radius: 4px; text-decoration: none; }
+      .btn-danger { border-color: #b00; color: #b00; }
+      .banner { padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; background: #f7f7f7; margin: 0.5rem 0; }
+      @media (max-width: 768px) {
+        body { margin: 0.75rem; }
+        table { min-width: 520px; }
+        nav a { display: inline-block; margin-bottom: 0.25rem; }
+      }
     </style>
   </head>
   <body>
@@ -27,4 +36,3 @@
     {% block content %}{% endblock %}
   </body>
   </html>
-

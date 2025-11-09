@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Run #{{ run.id }} - Tables</h2>
+{% if run.status != 'done' %}
+<div class="banner" id="runBanner">Run status: <strong id="runStatus">{{ run.status }}</strong>. The page will refresh when complete.</div>
+{% endif %}
 <p>
   <button class="btn btn-danger" id="deleteRunBtn" data-run-id="{{ run.id }}">Delete Run</button>
   <a class="btn" href="/">Back</a>
@@ -24,7 +27,7 @@
     </label>
   </div>
 
-  <div id="tablesContainer" style="margin-top:1rem;"></div>
+  <div class="table-responsive"><div id="tablesContainer" style="margin-top:1rem;"></div></div>
 
   <script>
     const tablesData = {{ tables_json | safe }}; // data[doc][converter][page] = tables
@@ -93,6 +96,27 @@
     if (docs && docs.length) { docSelect.value = docs[0]; }
     populatePages();
     renderTables();
+  </script>
+  <script>
+    // Poll status
+    (function(){
+      const runId = {{ run.id }};
+      const banner = document.getElementById('runBanner');
+      const statusEl = document.getElementById('runStatus');
+      let last = '{{ run.status }}';
+      async function poll(){
+        try{
+          const r = await fetch(`/api/runs/${runId}`);
+          if(!r.ok) return; const data = await r.json();
+          if (data.status && data.status !== last){
+            last = data.status;
+            if (statusEl) statusEl.textContent = data.status;
+            if (data.status === 'done' || data.status === 'failed') { location.reload(); }
+          }
+        } catch {}
+      }
+      setInterval(poll, 3000);
+    })();
   </script>
   <script>
     (function(){
