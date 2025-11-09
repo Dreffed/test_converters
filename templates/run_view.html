@@ -7,7 +7,7 @@
 <div class="viewer-layout">
   <aside class="viewer-side">
     <div class="group">
-      <label>Document</label>
+      <label for="docSelect">Document</label>
       <select id="docSelect" aria-label="Document"></select>
       <div id="pageLimitWarn" class="warn" hidden>Showing first 10 pages. <button id="overrideLimit">Show all</button></div>
     </div>
@@ -28,7 +28,11 @@
   <main class="viewer-main">
     <div class="toolbar">
       <button id="prevBtn">Prev</button>
-      <span>Page <input id="pageInput" type="number" min="0" value="0"/> / <span id="pageTotal">0</span></span>
+      <span>
+        <label for="pageInput">Page</label>
+        <input id="pageInput" type="number" min="0" value="0" aria-label="Page index"/>
+        / <span id="pageTotal">0</span>
+      </span>
       <button id="nextBtn">Next</button>
       <span class="spacer"></span>
       <button id="zoomOut">-</button>

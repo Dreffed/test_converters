@@ -9,12 +9,14 @@
 .toolbar { display: flex; align-items: center; gap: 8px; border: 1px solid #ddd; padding: 6px 8px; border-radius: 6px; }
 .toolbar .spacer { flex: 1; }
 .viewport { position: relative; overflow: auto; border: 1px solid #ddd; margin-top: 8px; border-radius: 6px; height: 60vh; }
-.canvas { position: relative; transform-origin: 0 0; }
+.canvas { position: relative; transform-origin: 0 0; display: inline-block; }
 #pageImg { display: block; max-width: 100%; height: auto; }
-#overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+#overlay { position: absolute; left: 0; top: 0; pointer-events: auto; }
 .select-rect { fill: rgba(0, 128, 255, 0.1); stroke: #0080ff; stroke-width: 1; }
 .bbox { fill: none; stroke-width: 2; }
 .bbox-label { font-size: 11px; fill: #000; stroke: #fff; stroke-width: 0.5; paint-order: stroke; }
+.bbox-badge-circle { stroke: #ffffff; stroke-width: 1.2; }
+.bbox-badge-text { font-size: 10.5px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0,0,0,0.35); stroke-width: 0.8; }
 .bottom-panel { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
 .tabs { display: flex; gap: 8px; margin-bottom: 6px; }
 .tabs button[aria-selected="true"] { font-weight: 600; }

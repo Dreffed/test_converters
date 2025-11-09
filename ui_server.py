@@ -15,6 +15,7 @@ from converter_benchmark import DocumentConverterBenchmark
 from converter_implementations import get_available_converters
 import urllib.parse
 import markdown as md
+from math import isfinite
 
 
 APP_DATA_DIR = Path(os.environ.get("APP_DATA_DIR", "data")).resolve()
@@ -510,6 +511,33 @@ def _doc_dir_for(run_id: int, doc: str) -> Path:
     return d
 
 
+def _find_pdf_for_doc(run_id: int, doc: str) -> Optional[Path]:
+    run = get_run(run_id)
+    if not run:
+        return None
+    # Prefer original files list
+    files = run.get('files') or []
+    for f in files:
+        try:
+            if Path(f).exists() and Path(f).stem == doc:
+                return Path(f)
+        except Exception:
+            continue
+    # Fallback to detailed results file paths
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    if details_path and Path(details_path).exists():
+        try:
+            results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+            for r in results:
+                fp = r.get('file_path') or ''
+                if Path(fp).exists() and Path(fp).stem == doc:
+                    return Path(fp)
+        except Exception:
+            pass
+    return None
+
+
 def _load_boxes_by_engine(doc_dir: Path) -> Optional[Dict]:
     p = doc_dir / 'visual_blocks_by_engine.json'
     if p.exists():
@@ -652,3 +680,118 @@ async def api_export(run_id: int, doc: str, request: Request):
         }
         z.writestr('manifest.json', json.dumps(manifest, indent=2))
     return FileResponse(str(zip_path), filename=zip_path.name)
+
+
+@app.post("/api/runs/{run_id}/doc/{doc}/page/{page}/text_for_boxes")
+async def api_text_for_boxes(run_id: int, doc: str, page: int, request: Request):
+    payload = await request.json()
+    boxes = payload.get('boxes') or []  # list of {x,y,w,h} normalized
+    if not isinstance(boxes, list) or not boxes:
+        return { 'page': page, 'text': '' }
+    pdf_path = _find_pdf_for_doc(run_id, doc)
+    if not pdf_path or not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Source PDF not found for document")
+    # Try PyMuPDF first
+    text_out = ''
+    try:
+        import fitz  # PyMuPDF
+        doc_f = fitz.open(str(pdf_path))
+        try:
+            if page < 0 or page >= doc_f.page_count:
+                raise HTTPException(status_code=400, detail="Invalid page index")
+            p = doc_f[page]
+            words = p.get_text('words') or []  # list of tuples (x0,y0,x1,y1,word,block,line,wordno)
+            # Page size
+            rect = p.rect
+            pw, ph = float(rect.width), float(rect.height)
+            norm_words = []
+            for w in words:
+                if len(w) < 5:
+                    continue
+                x0, y0, x1, y1, word = float(w[0]), float(w[1]), float(w[2]), float(w[3]), str(w[4])
+                if not word:
+                    continue
+                nx = max(0.0, min(1.0, x0 / pw)); ny = max(0.0, min(1.0, y0 / ph))
+                nw = max(0.0, min(1.0, (x1 - x0) / pw)); nh = max(0.0, min(1.0, (y1 - y0) / ph))
+                norm_words.append((nx, ny, nw, nh, word, int(w[6]) if len(w) > 6 else 0, int(w[7]) if len(w) > 7 else 0))
+            def intersects(a, b):
+                ax1=a[0]+a[2]; ay1=a[1]+a[3]; bx1=b[0]+b[2]; by1=b[1]+b[3]
+                iw=max(0.0, min(ax1,bx1)-max(a[0],b[0])); ih=max(0.0, min(ay1,by1)-max(a[1],b[1]));
+                return iw*ih > 0
+            collected = []
+            for bx in boxes:
+                try:
+                    bb = (float(bx.get('x',0)), float(bx.get('y',0)), float(bx.get('w',0)), float(bx.get('h',0)))
+                except Exception:
+                    continue
+                # add words that intersect this box
+                for (x,y,w,h,word,ln,wn) in norm_words:
+                    if intersects((x,y,w,h), bb):
+                        collected.append((ln, wn, y, x, word))
+            # sort by line, then word number, then by y then x
+            collected.sort(key=lambda t: (t[0], t[1], t[2], t[3]))
+            # simple line break heuristic by y diff
+            out_lines = []
+            cur_y = None
+            cur = []
+            for (_,_,y,_,word) in collected:
+                if cur_y is None:
+                    cur_y = y
+                if cur_y is not None and abs(y - cur_y) > 0.01:
+                    out_lines.append(' '.join(cur)); cur = []; cur_y = y
+                cur.append(word)
+            if cur:
+                out_lines.append(' '.join(cur))
+            text_out = '\n'.join(out_lines)
+        finally:
+            doc_f.close()
+    except Exception:
+        # Fallback to pdfplumber
+        try:
+            import pdfplumber
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                if page < 0 or page >= len(pdf.pages):
+                    raise HTTPException(status_code=400, detail="Invalid page index")
+                p = pdf.pages[page]
+                words = p.extract_words() or []
+                pw, ph = p.width, p.height
+                norm_words = []
+                for w in words:
+                    try:
+                        x0 = float(w.get('x0', 0)); y0=float(w.get('top',0)); x1=float(w.get('x1',0)); y1=float(w.get('bottom', y0))
+                        word = str(w.get('text','') or '')
+                        if not word:
+                            continue
+                        nx = max(0.0, min(1.0, x0/pw)); ny = max(0.0, min(1.0, y0/ph))
+                        nw = max(0.0, min(1.0, (x1-x0)/pw)); nh = max(0.0, min(1.0, (y1-y0)/ph))
+                        norm_words.append((nx, ny, nw, nh, word))
+                    except Exception:
+                        continue
+                def intersects(a,b):
+                    ax1=a[0]+a[2]; ay1=a[1]+a[3]; bx1=b[0]+b[2]; by1=b[1]+b[3]
+                    iw=max(0.0, min(ax1,bx1)-max(a[0],b[0])); ih=max(0.0, min(ay1,by1)-max(a[1],b[1]));
+                    return iw*ih > 0
+                collected = []
+                for bx in boxes:
+                    try:
+                        bb = (float(bx.get('x',0)), float(bx.get('y',0)), float(bx.get('w',0)), float(bx.get('h',0)))
+                    except Exception:
+                        continue
+                    for (x,y,w,h,word) in norm_words:
+                        if intersects((x,y,w,h), bb):
+                            collected.append((y,x,word))
+                collected.sort(key=lambda t:(t[0], t[1]))
+                # join words by line proximity
+                out_lines=[]; cur=[]; cur_y=None
+                for (y,x,word) in collected:
+                    if cur_y is None:
+                        cur_y = y
+                    if abs(y-cur_y) > 0.01:
+                        out_lines.append(' '.join(cur)); cur=[]; cur_y=y
+                    cur.append(word)
+                if cur:
+                    out_lines.append(' '.join(cur))
+                text_out='\n'.join(out_lines)
+        except Exception:
+            text_out = ''
+    return { 'page': page, 'text': text_out }
