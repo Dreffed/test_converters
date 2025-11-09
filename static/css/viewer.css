@@ -17,6 +17,7 @@
 .bbox-label { font-size: 11px; fill: #000; stroke: #fff; stroke-width: 0.5; paint-order: stroke; }
 .bbox-badge-circle { stroke: #ffffff; stroke-width: 1.2; }
 .bbox-badge-text { font-size: 10.5px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: rgba(0,0,0,0.35); stroke-width: 0.8; }
+.bbox-selected { fill: rgba(0,128,255,0.12); stroke: #0080ff; stroke-width: 3; pointer-events: none; }
 .bottom-panel { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
 .tabs { display: flex; gap: 8px; margin-bottom: 6px; }
 .tabs button[aria-selected="true"] { font-weight: 600; }

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -16,6 +16,7 @@ from converter_implementations import get_available_converters
 import urllib.parse
 import markdown as md
 from math import isfinite
+import io
 
 
 APP_DATA_DIR = Path(os.environ.get("APP_DATA_DIR", "data")).resolve()
@@ -358,9 +359,11 @@ def run_tables(request: Request, run_id: int):
         raise HTTPException(status_code=404, detail="Run not found")
     art = run.get("artifacts") or {}
     details_path = art.get("details")
-    converters = []
-    pages = set()
-    data: Dict[str, Dict[str, List]] = {}
+    converters: List[str] = []
+    docs_set = set()
+    pages_by_doc: Dict[str, List[int]] = {}
+    # data[doc][converter][page] = tables
+    data: Dict[str, Dict[str, Dict[str, List]]] = {}
     if details_path and Path(details_path).exists():
         try:
             results = json.loads(Path(details_path).read_text(encoding='utf-8'))
@@ -372,23 +375,32 @@ def run_tables(request: Request, run_id: int):
                 if tp:
                     if conv not in converters:
                         converters.append(conv)
-                    cdict = data.setdefault(conv, {})
+                    fp = r.get('file_path') or ''
+                    doc_name = Path(fp).stem
+                    docs_set.add(doc_name)
+                    cdict = data.setdefault(doc_name, {}).setdefault(conv, {})
                     for page_str, tables in tp.items():
                         # keys might be strings or ints in JSON
                         try:
                             p = int(page_str)
                         except Exception:
                             p = page_str
-                        pages.add(p)
+                        pages_by_doc.setdefault(doc_name, [])
+                        if isinstance(p, int) and p not in pages_by_doc[doc_name]:
+                            pages_by_doc[doc_name].append(p)
                         cdict[str(p)] = tables
         except Exception:
             pass
-    pages_list = sorted(list(pages))
+    # Sort pages per doc
+    for dname, plist in pages_by_doc.items():
+        pages_by_doc[dname] = sorted(plist)
+    docs_list = sorted(list(docs_set))
     return templates.TemplateResponse("run_tables.html", {
         "request": request,
         "run": run,
         "converters": converters,
-        "pages": pages_list,
+        "docs_json": json.dumps(docs_list),
+        "pages_by_doc_json": json.dumps(pages_by_doc),
         "tables_json": json.dumps(data)
     })
 
@@ -611,6 +623,66 @@ def api_bboxes(run_id: int, doc: str, page: int, tools: Optional[str] = None, wi
     return { 'page': page, 'tools': list(page_data.keys()), 'boxes': page_data }
 
 
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/table_bboxes")
+def api_table_bboxes(run_id: int, doc: str, page: int):
+    pdf_path = _find_pdf_for_doc(run_id, doc)
+    if not pdf_path or not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="Source PDF not found for document")
+    try:
+        import pdfplumber
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            if page < 0 or page >= len(pdf.pages):
+                raise HTTPException(status_code=400, detail="Invalid page index")
+            p = pdf.pages[page]
+            w, h = float(p.width), float(p.height)
+            # Try find_tables (preferred for geometry), fallback to extract_tables (no geometry)
+            bboxes = []
+            try:
+                tables = p.find_tables() or []
+                for i, t in enumerate(tables):
+                    # t.bbox: (x0, top, x1, bottom)
+                    try:
+                        x0, top, x1, bottom = [float(v) for v in t.bbox]
+                        nx = max(0.0, min(1.0, x0 / w)); ny = max(0.0, min(1.0, top / h))
+                        nw = max(0.0, min(1.0, (x1 - x0) / w)); nh = max(0.0, min(1.0, (bottom - top) / h))
+                        bboxes.append({ 'id': f'table-p{page}-i{i}', 'bbox': { 'x': nx, 'y': ny, 'w': nw, 'h': nh } })
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return { 'page': page, 'tables': bboxes }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to detect tables: {e}")
+
+
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/tables")
+def api_tables(run_id: int, doc: str, page: int, tool: Optional[str] = None):
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    out: Dict[str, List[Dict]] = {}
+    if details_path and Path(details_path).exists():
+        try:
+            results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+            for r in results:
+                conv = r.get('converter_name')
+                if tool and conv != tool:
+                    continue
+                fp = r.get('file_path') or ''
+                if Path(fp).stem != doc:
+                    continue
+                meta = r.get('metadata') or {}
+                tpp = meta.get('tables_per_page') or {}
+                tables = tpp.get(str(page)) or tpp.get(page)
+                if tables:
+                    out[conv] = tables
+        except Exception:
+            pass
+    return { 'page': page, 'tables': out }
+
+
 @app.post("/api/runs/{run_id}/doc/{doc}/state")
 async def api_save_state(run_id: int, doc: str, request: Request):
     payload = await request.json()
@@ -653,7 +725,155 @@ async def api_export(run_id: int, doc: str, request: Request):
         if boxes_by_engine:
             data = json.dumps(boxes_by_engine, indent=2).encode('utf-8')
             z.writestr('boxes_by_engine.json', data)
-        # Naive summary CSV (counts per page/tool)
+
+        # Tables JSON and summary CSV
+        try:
+            tables_by_tool: Dict[str, Dict[str, List[Dict]]] = {}
+            art = get_run(run_id).get('artifacts') or {}
+            details_path = art.get('details')
+            if details_path and Path(details_path).exists():
+                results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+                for r in results:
+                    fp = r.get('file_path') or ''
+                    if Path(fp).stem != doc:
+                        continue
+                    conv = r.get('converter_name')
+                    meta = r.get('metadata') or {}
+                    tpp = meta.get('tables_per_page') or {}
+                    if tpp:
+                        tables_by_tool[conv] = { str(k): v for k, v in tpp.items() }
+            if tables_by_tool:
+                z.writestr('tables.json', json.dumps(tables_by_tool, indent=2))
+                # summary CSV: counts per page/tool
+                import csv
+                tbuf = io.StringIO(); tw = csv.writer(tbuf)
+                tw.writerow(['page','tool','table_count'])
+                pages = set()
+                for tool, per_page in tables_by_tool.items():
+                    for pk, lst in per_page.items():
+                        pages.add(int(pk))
+                for pidx in sorted(pages):
+                    for tool, per_page in tables_by_tool.items():
+                        cnt = len(per_page.get(str(pidx), []) or [])
+                        tw.writerow([pidx, tool, cnt])
+                z.writestr('tables_summary.csv', tbuf.getvalue())
+        except Exception:
+            pass
+        
+        # Generate merged overlay SVGs for each mode and page
+        def do_merge(mode: str, page_idx: int):
+            entry = boxes_by_engine.get(str(page_idx)) or boxes_by_engine.get(page_idx) or {}
+            # flatten
+            boxes = []
+            for t, lst in entry.items():
+                for b in lst:
+                    bb = b.get('bbox') or {}
+                    boxes.append({'id': b.get('id'), 'tool': t, 'bbox': {'x': float(bb.get('x',0)), 'y': float(bb.get('y',0)), 'w': float(bb.get('w',0)), 'h': float(bb.get('h',0))}})
+            def union(a,b):
+                x=min(a['x'],b['x']); y=min(a['y'],b['y'])
+                x1=max(a['x']+a['w'], b['x']+b['w']); y1=max(a['y']+a['h'], b['y']+b['h'])
+                return {'x':x, 'y':y, 'w':max(0.0,x1-x), 'h':max(0.0,y1-y)}
+            def overlap_x(a,b):
+                ax1=a['x']+a['w']; bx1=b['x']+b['w']
+                return max(0.0, min(ax1,bx1)-max(a['x'],b['x']))
+            def overlap_y(a,b):
+                ay1=a['y']+a['h']; by1=b['y']+b['h']
+                return max(0.0, min(ay1,by1)-max(a['y'],b['y']))
+            groups = []
+            used = [False]*len(boxes)
+            if mode == 'vertical':
+                order = sorted(range(len(boxes)), key=lambda i:(boxes[i]['bbox']['y'], boxes[i]['bbox']['x']))
+                gap_thr = 0.02
+                for idx in order:
+                    if used[idx]: continue
+                    used[idx]=True
+                    g_ids=[boxes[idx]['id']]; g_bbox=boxes[idx]['bbox']
+                    changed=True
+                    while changed:
+                        changed=False
+                        for j in range(len(boxes)):
+                            if used[j]: continue
+                            b = boxes[j]['bbox']
+                            if overlap_x(g_bbox, b) > 0 and (b['y'] <= g_bbox['y']+g_bbox['h']+gap_thr and g_bbox['y'] <= b['y']+b['h']+gap_thr):
+                                used[j]=True; g_ids.append(boxes[j]['id']); g_bbox = union(g_bbox, b); changed=True
+                    groups.append({'bbox': g_bbox})
+            elif mode == 'horizontal':
+                order = sorted(range(len(boxes)), key=lambda i:(boxes[i]['bbox']['x'], boxes[i]['bbox']['y']))
+                gap_thr = 0.02
+                for idx in order:
+                    if used[idx]: continue
+                    used[idx]=True
+                    g_bbox=boxes[idx]['bbox']
+                    changed=True
+                    while changed:
+                        changed=False
+                        for j in range(len(boxes)):
+                            if used[j]: continue
+                            b = boxes[j]['bbox']
+                            if overlap_y(g_bbox, b) > 0 and (b['x'] <= g_bbox['x']+g_bbox['w']+gap_thr and g_bbox['x'] <= b['x']+b['w']+gap_thr):
+                                used[j]=True; g_bbox = union(g_bbox, b); changed=True
+                    groups.append({'bbox': g_bbox})
+            else:
+                def iou(bb_a, bb_b):
+                    ax1=bb_a['x']+bb_a['w']; ay1=bb_a['y']+bb_a['h']
+                    bx1=bb_b['x']+bb_b['w']; by1=bb_b['y']+bb_b['h']
+                    iw=max(0.0, min(ax1,bx1)-max(bb_a['x'],bb_b['x']))
+                    ih=max(0.0, min(ay1,by1)-max(bb_a['y'],bb_b['y']))
+                    inter=iw*ih
+                    if inter<=0: return 0.0
+                    ua=bb_a['w']*bb_a['h']+bb_b['w']*bb_b['h']-inter
+                    return inter/ua if ua>0 else 0.0
+                prox = 0.03
+                for i in range(len(boxes)):
+                    if used[i]: continue
+                    used[i]=True
+                    g_bbox=boxes[i]['bbox']
+                    queue=[i]
+                    while queue:
+                        u=queue.pop(0)
+                        for v in range(len(boxes)):
+                            if used[v]: continue
+                            if iou(boxes[u]['bbox'], boxes[v]['bbox'])>0:
+                                used[v]=True; queue.append(v); g_bbox = union(g_bbox, boxes[v]['bbox']); continue
+                            cx = boxes[u]['bbox']['x']+boxes[u]['bbox']['w']/2
+                            cy = boxes[u]['bbox']['y']+boxes[u]['bbox']['h']/2
+                            dx = boxes[v]['bbox']['x']+boxes[v]['bbox']['w']/2
+                            dy = boxes[v]['bbox']['y']+boxes[v]['bbox']['h']/2
+                            if abs(cx-dx) <= prox or abs(cy-dy) <= prox:
+                                used[v]=True; queue.append(v); g_bbox = union(g_bbox, boxes[v]['bbox'])
+                    groups.append({'bbox': g_bbox})
+            return groups
+
+        # produce SVG overlays
+        try:
+            from PIL import Image
+            # map page index -> (width, height)
+            page_sizes = {}
+            for imgp in sorted(doc_dir.glob('page_*.png')):
+                stem = imgp.stem  # page_000
+                try:
+                    pidx = int(stem.split('_')[-1])
+                except Exception:
+                    continue
+                with Image.open(imgp) as im:
+                    page_sizes[pidx] = (im.width, im.height)
+            for mode in ('vertical','horizontal','paragraph'):
+                for pidx, (w,h) in page_sizes.items():
+                    groups = do_merge(mode, pidx)
+                    # build svg
+                    svg_lines = [f"<svg xmlns='http://www.w3.org/2000/svg' width='{w}' height='{h}' viewBox='0 0 {w} {h}'>"]
+                    color = '#FFA500'
+                    for i, g in enumerate(groups):
+                        bb = g['bbox']; x=int(bb['x']*w); y=int(bb['y']*h); ww=int(bb['w']*w); hh=int(bb['h']*h)
+                        svg_lines.append(f"<rect x='{x}' y='{y}' width='{ww}' height='{hh}' fill='none' stroke='{color}' stroke-width='2' />")
+                        cx = x+12; cy = y+12
+                        svg_lines.append(f"<circle cx='{cx}' cy='{cy}' r='9' fill='{color}' stroke='#fff' stroke-width='1.2' />")
+                        svg_lines.append(f"<text x='{cx}' y='{cy}' fill='#000' font-size='11' font-weight='600' text-anchor='middle' dominant-baseline='middle'>{i+1}</text>")
+                    svg_lines.append("</svg>")
+                    z.writestr(f"overlays/merged/{mode}/page_{pidx:03d}.svg", "\n".join(svg_lines))
+        except Exception:
+            pass
+        # Summary CSV (counts per page/tool)
         try:
             import csv
             buf = io.StringIO()
@@ -667,6 +887,88 @@ async def api_export(run_id: int, doc: str, request: Request):
             z.writestr('summary.csv', buf.getvalue())
         except Exception:
             pass
+        # Overlap analysis CSV
+        try:
+            import csv
+            def iou(bb_a, bb_b):
+                ax1=bb_a['x']+bb_a['w']; ay1=bb_a['y']+bb_a['h']
+                bx1=bb_b['x']+bb_b['w']; by1=bb_b['y']+bb_b['h']
+                iw=max(0.0, min(ax1,bx1)-max(bb_a['x'],bb_b['x']))
+                ih=max(0.0, min(ay1,by1)-max(bb_a['y'],bb_b['y']))
+                inter=iw*ih
+                if inter<=0: return 0.0
+                ua=bb_a['w']*bb_a['h']+bb_b['w']*bb_b['h']-inter
+                return inter/ua if ua>0 else 0.0
+            obuf = io.StringIO(); ow = csv.writer(obuf)
+            ow.writerow(['page','tool_a','tool_b','count_a','count_b','overlaps_a_to_b','avg_max_iou_a_to_b','overlaps_b_to_a','avg_max_iou_b_to_a'])
+            for pk in sorted(boxes_by_engine.keys(), key=lambda x:int(x)):
+                entry = boxes_by_engine[pk]
+                tools_list = sorted(entry.keys())
+                for i in range(len(tools_list)):
+                    for j in range(i+1, len(tools_list)):
+                        ta, tb = tools_list[i], tools_list[j]
+                        A = entry.get(ta, []); B = entry.get(tb, [])
+                        max_a=[]; overlaps_a=0
+                        for a in A:
+                            bb_a = a.get('bbox') or {}
+                            best=0.0
+                            for b in B:
+                                bb_b=b.get('bbox') or {}
+                                v=iou(bb_a, bb_b)
+                                if v>best: best=v
+                            if best>0: overlaps_a+=1
+                            max_a.append(best)
+                        avg_a = sum(max_a)/len(max_a) if max_a else 0.0
+                        max_b=[]; overlaps_b=0
+                        for b in B:
+                            bb_b=b.get('bbox') or {}
+                            best=0.0
+                            for a in A:
+                                bb_a=a.get('bbox') or {}
+                                v=iou(bb_b, bb_a)
+                                if v>best: best=v
+                            if best>0: overlaps_b+=1
+                            max_b.append(best)
+                        avg_b = sum(max_b)/len(max_b) if max_b else 0.0
+                        ow.writerow([pk, ta, tb, len(A), len(B), overlaps_a, f"{avg_a:.4f}", overlaps_b, f"{avg_b:.4f}"])
+            z.writestr('overlaps.csv', obuf.getvalue())
+        except Exception:
+            pass
+        # Textual comparison CSV
+        try:
+            import csv, re
+            run = get_run(run_id)
+            art = run.get('artifacts') or {}
+            details_path = art.get('details')
+            texts = {}
+            if details_path and Path(details_path).exists():
+                results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+                for r in results:
+                    fp = r.get('file_path') or ''
+                    if Path(fp).stem != doc:
+                        continue
+                    name = r.get('converter_name')
+                    texts[name] = r.get('text_content') or r.get('text') or ''
+            names = sorted(texts.keys())
+            def sim(a,b):
+                try:
+                    from difflib import SequenceMatcher
+                    return SequenceMatcher(None, a, b).ratio()
+                except Exception:
+                    return 0.0
+            tbuf = io.StringIO(); tw = csv.writer(tbuf)
+            tw.writerow(['converter_a','converter_b','similarity','char_diff','word_diff'])
+            for i in range(len(names)):
+                for j in range(i+1, len(names)):
+                    na, nb = names[i], names[j]
+                    ta, tb = texts[na], texts[nb]
+                    s = sim(ta, tb)
+                    char_diff = abs(len(ta)-len(tb))
+                    wa = len(re.findall(r'\w+', ta)); wb = len(re.findall(r'\w+', tb))
+                    tw.writerow([na, nb, f"{s:.4f}", char_diff, abs(wa-wb)])
+            z.writestr('text_compare.csv', tbuf.getvalue())
+        except Exception:
+            pass
         # Manifest
         manifest = {
             'run_id': run_id,
@@ -675,7 +977,12 @@ async def api_export(run_id: int, doc: str, request: Request):
             'artifacts': {
                 'images_dir': 'images/',
                 'boxes_json': 'boxes_by_engine.json',
-                'summary_csv': 'summary.csv'
+                'summary_csv': 'summary.csv',
+                'overlaps_csv': 'overlaps.csv',
+                'text_compare_csv': 'text_compare.csv',
+                'tables_json': 'tables.json',
+                'tables_summary_csv': 'tables_summary.csv',
+                'overlays_dir': 'overlays/merged/'
             }
         }
         z.writestr('manifest.json', json.dumps(manifest, indent=2))
@@ -795,3 +1102,170 @@ async def api_text_for_boxes(run_id: int, doc: str, page: int, request: Request)
         except Exception:
             text_out = ''
     return { 'page': page, 'text': text_out }
+
+
+@app.post("/api/runs/{run_id}/doc/{doc}/page/{page}/merge")
+async def api_merge_boxes(run_id: int, doc: str, page: int, request: Request):
+    payload = await request.json()
+    mode = (payload.get('mode') or 'vertical').lower()
+    tools = payload.get('tools') or []
+    doc_dir = _doc_dir_for(run_id, doc)
+    boxes_by_engine = _load_boxes_by_engine(doc_dir)
+    if boxes_by_engine is None:
+        boxes_by_engine = _load_boxes_from_detailed(run_id, doc)
+    page_data = boxes_by_engine.get(str(page)) or boxes_by_engine.get(page) or {}
+    selected_tools = tools or list(page_data.keys())
+    boxes = []
+    for t in selected_tools:
+        for b in page_data.get(t, []):
+            bb = b.get('bbox') or {}
+            boxes.append({'id': b.get('id'), 'tool': t, 'bbox': {'x': float(bb.get('x',0)), 'y': float(bb.get('y',0)), 'w': float(bb.get('w',0)), 'h': float(bb.get('h',0))}})
+    def union(a,b):
+        x=min(a['x'],b['x']); y=min(a['y'],b['y'])
+        x1=max(a['x']+a['w'], b['x']+b['w']); y1=max(a['y']+a['h'], b['y']+b['h'])
+        return {'x':x, 'y':y, 'w':max(0.0,x1-x), 'h':max(0.0,y1-y)}
+    def overlap_x(a,b):
+        ax1=a['x']+a['w']; bx1=b['x']+b['w']
+        return max(0.0, min(ax1,bx1)-max(a['x'],b['x']))
+    def overlap_y(a,b):
+        ay1=a['y']+a['h']; by1=b['y']+b['h']
+        return max(0.0, min(ay1,by1)-max(a['y'],b['y']))
+    groups = []
+    if not boxes:
+        return {'mode': mode, 'groups': []}
+    used = [False]*len(boxes)
+    if mode == 'vertical':
+        order = sorted(range(len(boxes)), key=lambda i:(boxes[i]['bbox']['y'], boxes[i]['bbox']['x']))
+        gap_thr = 0.02
+        for idx in order:
+            if used[idx]: continue
+            used[idx]=True
+            g_ids=[boxes[idx]['id']]; g_bbox=boxes[idx]['bbox']
+            changed=True
+            while changed:
+                changed=False
+                for j in range(len(boxes)):
+                    if used[j]: continue
+                    b = boxes[j]['bbox']
+                    if overlap_x(g_bbox, b) > 0 and (b['y'] <= g_bbox['y']+g_bbox['h']+gap_thr and g_bbox['y'] <= b['y']+b['h']+gap_thr):
+                        used[j]=True; g_ids.append(boxes[j]['id']); g_bbox = union(g_bbox, b); changed=True
+            groups.append({'id': f"merged-p{page}-m{len(groups)+1}", 'tool':'merged', 'bbox': g_bbox, 'members': g_ids})
+    elif mode == 'horizontal':
+        order = sorted(range(len(boxes)), key=lambda i:(boxes[i]['bbox']['x'], boxes[i]['bbox']['y']))
+        gap_thr = 0.02
+        for idx in order:
+            if used[idx]: continue
+            used[idx]=True
+            g_ids=[boxes[idx]['id']]; g_bbox=boxes[idx]['bbox']
+            changed=True
+            while changed:
+                changed=False
+                for j in range(len(boxes)):
+                    if used[j]: continue
+                    b = boxes[j]['bbox']
+                    if overlap_y(g_bbox, b) > 0 and (b['x'] <= g_bbox['x']+g_bbox['w']+gap_thr and g_bbox['x'] <= b['x']+b['w']+gap_thr):
+                        used[j]=True; g_ids.append(boxes[j]['id']); g_bbox = union(g_bbox, b); changed=True
+            groups.append({'id': f"merged-p{page}-m{len(groups)+1}", 'tool':'merged', 'bbox': g_bbox, 'members': g_ids})
+    else:
+        import math
+        def iou(bb_a, bb_b):
+            ax1=bb_a['x']+bb_a['w']; ay1=bb_a['y']+bb_a['h']
+            bx1=bb_b['x']+bb_b['w']; by1=bb_b['y']+bb_b['h']
+            iw=max(0.0, min(ax1,bx1)-max(bb_a['x'],bb_b['x']))
+            ih=max(0.0, min(ay1,by1)-max(bb_a['y'],bb_b['y']))
+            inter=iw*ih
+            if inter<=0: return 0.0
+            ua=bb_a['w']*bb_a['h']+bb_b['w']*bb_b['h']-inter
+            return inter/ua if ua>0 else 0.0
+        prox = 0.03
+        for i in range(len(boxes)):
+            if used[i]: continue
+            used[i]=True
+            queue=[i]; g_ids=[boxes[i]['id']]; g_bbox=boxes[i]['bbox']
+            while queue:
+                u = queue.pop(0)
+                for v in range(len(boxes)):
+                    if used[v]: continue
+                    if iou(boxes[u]['bbox'], boxes[v]['bbox'])>0:
+                        used[v]=True; queue.append(v); g_ids.append(boxes[v]['id']); g_bbox = union(g_bbox, boxes[v]['bbox'])
+                        continue
+                    cx = boxes[u]['bbox']['x']+boxes[u]['bbox']['w']/2
+                    cy = boxes[u]['bbox']['y']+boxes[u]['bbox']['h']/2
+                    dx = boxes[v]['bbox']['x']+boxes[v]['bbox']['w']/2
+                    dy = boxes[v]['bbox']['y']+boxes[v]['bbox']['h']/2
+                    if abs(cx-dx) <= prox or abs(cy-dy) <= prox:
+                        used[v]=True; queue.append(v); g_ids.append(boxes[v]['id']); g_bbox = union(g_bbox, boxes[v]['bbox'])
+            groups.append({'id': f"merged-p{page}-m{len(groups)+1}", 'tool':'merged', 'bbox': g_bbox, 'members': g_ids})
+    for g in groups:
+        bb = g['bbox']
+        bb['x']=max(0.0,min(1.0,bb['x'])); bb['y']=max(0.0,min(1.0,bb['y']))
+        bb['w']=max(0.0,min(1.0,bb['w'])); bb['h']=max(0.0,min(1.0,bb['h']))
+    return {'mode': mode, 'groups': groups}
+
+
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/words")
+def api_words(run_id: int, doc: str, page: int, tool: Optional[str] = None):
+    run = get_run(run_id)
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    if not details_path or not Path(details_path).exists():
+        return { 'page': page, 'words': {} }
+    try:
+        results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+        out = {}
+        for r in results:
+            conv = r.get('converter_name')
+            if tool and conv != tool: continue
+            fp = r.get('file_path') or ''
+            if Path(fp).stem != doc: continue
+            meta = r.get('metadata') or {}
+            wpp = meta.get('words_per_page') or {}
+            words = wpp.get(str(page)) or wpp.get(page)
+            if words:
+                out[conv] = words
+        return { 'page': page, 'words': out }
+    except Exception:
+        return { 'page': page, 'words': {} }
+
+
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/characters")
+def api_chars(run_id: int, doc: str, page: int, tool: Optional[str] = None):
+    run = get_run(run_id)
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    if not details_path or not Path(details_path).exists():
+        return { 'page': page, 'characters': {} }
+    try:
+        results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+        out = {}
+        for r in results:
+            conv = r.get('converter_name')
+            if tool and conv != tool: continue
+            fp = r.get('file_path') or ''
+            if Path(fp).stem != doc: continue
+            meta = r.get('metadata') or {}
+            cpp = meta.get('chars_per_page') or meta.get('characters_per_page') or {}
+            chars = cpp.get(str(page)) or cpp.get(page)
+            if chars:
+                out[conv] = chars
+        return { 'page': page, 'characters': out }
+    except Exception:
+        return { 'page': page, 'characters': {} }
+
+
+@app.get("/api/image_gray")
+def api_image_gray(path: str):
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    try:
+        from PIL import Image
+        with Image.open(p) as im:
+            g = im.convert('L').convert('RGBA') if im.mode in ('RGBA','LA') else im.convert('L')
+            bio = io.BytesIO()
+            g.save(bio, format='PNG')
+            bio.seek(0)
+            return StreamingResponse(bio, media_type='image/png')
+    except Exception:
+        pass
+    return FileResponse(str(p))

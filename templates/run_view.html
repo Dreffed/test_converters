@@ -13,6 +13,7 @@
     </div>
     <div class="group">
       <div class="row"><input id="toggleGray" type="checkbox"/> <label for="toggleGray">Grayscale</label></div>
+      <div class="row"><input id="toggleGrayServer" type="checkbox"/> <label for="toggleGrayServer">Use server grayscale</label></div>
       <div class="row"><input id="toggleNums" type="checkbox"/> <label for="toggleNums">Show BBox Numbers</label></div>
       <label>Overlay Opacity <input id="opacity" type="range" min="0" max="100" value="70"/></label>
     </div>
@@ -20,6 +21,24 @@
       <label>Parsers</label>
       <div id="parsers"></div>
       <div id="legend" class="legend"></div>
+    </div>
+    <div class="group">
+      <label for="mergeMode">Merge</label>
+      <select id="mergeMode" aria-label="Merge mode">
+        <option value="vertical">Vertical</option>
+        <option value="horizontal">Horizontal</option>
+        <option value="paragraph">Paragraph</option>
+      </select>
+      <div class="row">
+        <button id="applyMerge">Apply Merge</button>
+      </div>
+    </div>
+    <div class="group">
+      <label>Overlay Types</label>
+      <div class="row"><input id="toggleTextBoxes" type="checkbox" checked/> <label for="toggleTextBoxes">Text BBoxes</label></div>
+      <div class="row"><input id="toggleMerged" type="checkbox"/> <label for="toggleMerged">Merged BBoxes</label></div>
+      <div class="row"><input id="toggleTableBoxes" type="checkbox"/> <label for="toggleTableBoxes">Table BBoxes</label></div>
+      </div>
     </div>
     <div class="group">
       <button id="exportBtn">Export Package</button>
@@ -38,6 +57,8 @@
       <button id="zoomOut">-</button>
       <button id="zoomReset">100%</button>
       <button id="zoomIn">+</button>
+      <span class="spacer"></span>
+      <button id="clearSel">Clear Selection</button>
     </div>
     <div id="viewport" class="viewport">
       <div id="canvas" class="canvas">
@@ -48,6 +69,12 @@
     <section class="bottom-panel">
       <div class="tabs" id="resultTabs"></div>
       <div class="tab-panels" id="resultPanels"></div>
+      <hr/>
+      <div>
+        <h4>Tables (current page)</h4>
+        <div id="tablesTabs" class="tabs"></div>
+        <div id="tablesPanels" class="tab-panels"></div>
+      </div>
     </section>
   </main>
 </div>

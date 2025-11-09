@@ -1,38 +1,59 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Run #{{ run.id }} — Tables</h2>
+<h2>Run #{{ run.id }} - Tables</h2>
 
-{% if converters and pages %}
+{% if converters %}
   <div>
-    <label>Converter:
+    <label for="docSelect">Document:
+      <select id="docSelect"></select>
+    </label>
+    <label for="convSelect">Converter:
       <select id="convSelect">
         {% for c in converters %}
           <option value="{{ c }}">{{ c }}</option>
         {% endfor %}
       </select>
     </label>
-    <label>Page:
-      <select id="pageSelect">
-        {% for p in pages %}
-          <option value="{{ p }}">{{ p }}</option>
-        {% endfor %}
-      </select>
+    <label for="pageSelect">Page:
+      <select id="pageSelect"></select>
     </label>
   </div>
 
   <div id="tablesContainer" style="margin-top:1rem;"></div>
 
   <script>
-    const tablesData = {{ tables_json | safe }};
+    const tablesData = {{ tables_json | safe }}; // data[doc][converter][page] = tables
+    const pagesByDoc = {{ pages_by_doc_json | safe }}; // { doc: [pages] }
+    const docs = {{ docs_json | safe }};
     const convSelect = document.getElementById('convSelect');
+    const docSelect = document.getElementById('docSelect');
     const pageSelect = document.getElementById('pageSelect');
     const container = document.getElementById('tablesContainer');
 
+    function populateDocs() {
+      docSelect.innerHTML = '';
+      (docs || []).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d; opt.textContent = d; docSelect.appendChild(opt);
+      });
+    }
+
+    function populatePages() {
+      const doc = docSelect.value;
+      const pages = pagesByDoc[doc] || [];
+      pageSelect.innerHTML = '';
+      pages.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p; opt.textContent = p; pageSelect.appendChild(opt);
+      });
+    }
+
     function renderTables() {
       const conv = convSelect.value;
+      const doc = docSelect.value;
       const page = pageSelect.value;
       container.innerHTML = '';
-      const pageTables = (tablesData[conv] || {})[String(page)] || [];
+      const pageTables = (((tablesData[doc]||{})[conv]) || {})[String(page)] || [];
       if (pageTables.length === 0) {
         container.innerHTML = '<p>No tables found for this page.</p>';
         return;
@@ -61,7 +82,11 @@
     }
 
     convSelect.addEventListener('change', renderTables);
+    docSelect.addEventListener('change', () => { populatePages(); renderTables(); });
     pageSelect.addEventListener('change', renderTables);
+    populateDocs();
+    if (docs && docs.length) { docSelect.value = docs[0]; }
+    populatePages();
     renderTables();
   </script>
 {% else %}
@@ -70,4 +95,3 @@
 
 <p><a class="btn" href="/runs/{{ run.id }}">Back</a></p>
 {% endblock %}
-

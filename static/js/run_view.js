@@ -14,15 +14,24 @@
   const svg = $('#overlay');
   const toggleGray = $('#toggleGray');
   const toggleNums = $('#toggleNums');
+  const toggleGrayServer = document.getElementById('toggleGrayServer');
   const opacity = $('#opacity');
   const parsersDiv = $('#parsers');
   const legendDiv = $('#legend');
   const exportBtn = $('#exportBtn');
+  const clearSelBtn = document.getElementById('clearSel');
   const warn = $('#pageLimitWarn');
   const overrideBtn = $('#overrideLimit');
+  const toggleMerged = document.getElementById('toggleMerged');
+  const toggleTextBoxes = document.getElementById('toggleTextBoxes');
+  const toggleTableBoxes = document.getElementById('toggleTableBoxes');
+  const mergeModeSel = document.getElementById('mergeMode');
+  const applyMergeBtn = document.getElementById('applyMerge');
 
   const tabs = $('#resultTabs');
   const panels = $('#resultPanels');
+  const tablesTabs = document.getElementById('tablesTabs');
+  const tablesPanels = document.getElementById('tablesPanels');
 
   const state = {
     docs: [], colors: {},
@@ -35,6 +44,8 @@
     limitOverride: false,
     boxesCache: new Map(), // key: `${docId}:${page}` => { tool: boxes[] }
     selection: null,
+    mergedCache: new Map(), // key: `${docId}:${page}:${mode}:${toolsKey}` => groups
+    tablesCache: new Map(), // key: `${docId}:${page}` => [{id,bbox}]
   };
 
   function artifactUrl(path){ return '/api/artifacts?path=' + encodeURIComponent(path); }
@@ -96,6 +107,23 @@
     loadPage();
   }
 
+  function updateBaseImageSrc(baseEntry){
+    if(!baseEntry || !baseEntry.base) return;
+    const path = baseEntry.base;
+    if(toggleGray && toggleGray.checked){
+      if (toggleGrayServer && toggleGrayServer.checked) {
+        img.src = `/api/image_gray?path=${encodeURIComponent(path)}`;
+      } else {
+        img.src = artifactUrl(path);
+        // apply CSS grayscale filter after load to ensure dimensions are known
+        img.onload = ()=>{ img.style.filter = 'grayscale(100%)'; };
+        return;
+      }
+    } else {
+      img.src = artifactUrl(path);
+    }
+  }
+
   async function loadPage(){
     const docId = state.docId; const p = state.page;
     // Base image path: use existing visual index for fallback
@@ -105,11 +133,10 @@
       const doc = vi.find(d=>d.doc===docId);
       if(doc){ baseEntry = (doc.pages||[]).find(e=>e.page===p); }
     } catch {}
-    if(baseEntry && baseEntry.base){
-      img.src = artifactUrl(baseEntry.base);
-      img.onload = ()=> { renderOverlay(); };
-    }
+    updateBaseImageSrc(baseEntry);
+    img.onload = ()=> { renderOverlay(); };
     await loadBoxes();
+    if (toggleTableBoxes && toggleTableBoxes.checked) { await loadTableBoxes(); }
     renderOverlay();
     renderBottom();
   }
@@ -126,6 +153,36 @@
       arr.forEach((b, i)=>{ if (b && typeof b === 'object') b._idx = (i+1); });
     });
     state.boxesCache.set(key, byTool);
+  }
+
+  async function loadTableBoxes(){
+    const key = `${state.docId}:${state.page}`;
+    if (state.tablesCache.has(key)) return;
+    try{
+      const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/table_bboxes`);
+      if(resp.ok){
+        const data = await resp.json();
+        state.tablesCache.set(key, data.tables || []);
+      }
+    } catch {}
+  }
+
+  async function loadTablesForPage(){
+    const docId = state.docId; const p = state.page;
+    const boxesByTool = getBoxes();
+    const tools = state.selected.size? Array.from(state.selected) : Object.keys(boxesByTool);
+    // Fetch per-tool tables
+    const results = await Promise.all(tools.map(async tool => {
+      try{
+        const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(docId)}/page/${p}/tables?tool=${encodeURIComponent(tool)}`);
+        if(!resp.ok) return [tool, []];
+        const data = await resp.json();
+        return [tool, (data.tables||{})[tool] || []];
+      } catch { return [tool, []]; }
+    }));
+    const perTool = {};
+    results.forEach(([tool, tables])=> perTool[tool] = tables);
+    return perTool;
   }
 
   function getBoxes(){
@@ -152,12 +209,30 @@
     svg.appendChild(gRoot);
     const boxesByTool = getBoxes();
     const tools = state.selected.size? Array.from(state.selected) : Object.keys(boxesByTool);
-    tools.forEach(tool=>{
-      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-      g.setAttribute('data-tool', tool);
-      gRoot.appendChild(g);
-      const color = state.colors[tool] || '#00FFFF';
-      const textColor = (function(){
+    // Precompute selected ids for highlight
+    const selectedIdsByTool = {};
+    if (state.selection) {
+      const s = state.selection;
+      tools.forEach(tool => {
+        const list = boxesByTool[tool] || [];
+        let chosen = [];
+        if ((s.w||0) < 0.005 && (s.h||0) < 0.005) {
+          const px = s.x, py = s.y;
+          chosen = list.filter(b=> px >= b.bbox.x && px <= b.bbox.x + b.bbox.w && py >= b.bbox.y && py <= b.bbox.y + b.bbox.h);
+        } else {
+          chosen = list.filter(b=> intersect(s, b.bbox).area > 0);
+        }
+        selectedIdsByTool[tool] = new Set(chosen.map(b => b.id));
+      });
+    }
+    // Draw per-tool text boxes if enabled
+    if (!toggleTextBoxes || toggleTextBoxes.checked) {
+      tools.forEach(tool=>{
+        const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+        g.setAttribute('data-tool', tool);
+        gRoot.appendChild(g);
+        const color = state.colors[tool] || '#00FFFF';
+        const textColor = (function(){
         const hex = color.replace('#','');
         const h = hex.length===3 ? hex.split('').map(c=>c+c).join('') : hex;
         const n = parseInt(h,16);
@@ -176,6 +251,15 @@
         r.setAttribute('height', String(hpx));
         r.setAttribute('stroke', color);
         g.appendChild(r);
+        if (selectedIdsByTool[tool] && selectedIdsByTool[tool].has(b.id)) {
+          const rs = document.createElementNS('http://www.w3.org/2000/svg','rect');
+          rs.setAttribute('class','bbox-selected');
+          rs.setAttribute('x', String(xpx));
+          rs.setAttribute('y', String(ypx));
+          rs.setAttribute('width', String(wpx));
+          rs.setAttribute('height', String(hpx));
+          g.appendChild(rs);
+        }
         if(toggleNums.checked){
           const radius = 9;
           const cx = xpx + radius + 3;
@@ -196,7 +280,33 @@
           g.appendChild(t);
         }
       });
-    });
+      });
+    }
+    // Render merged layer if enabled and cached
+    if(toggleMerged && toggleMerged.checked){
+      const key = `${state.docId}:${state.page}:${mergeModeSel ? mergeModeSel.value : 'vertical'}:${tools.slice().sort().join(',')}`;
+      const merged = state.mergedCache.get(key);
+      if(merged && merged.groups){
+        const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+        g.setAttribute('data-tool','merged');
+        gRoot.appendChild(g);
+        const color = '#FFA500';
+        const textColor = '#000';
+        merged.groups.forEach((m,i)=>{
+          const {x,y,w,h} = m.bbox || {}; if(w<=0||h<=0) return;
+          const xpx=x*img.naturalWidth, ypx=y*img.naturalHeight, wpx=w*img.naturalWidth, hpx=h*img.naturalHeight;
+          const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+          r.setAttribute('class','bbox');
+          r.setAttribute('x', String(xpx)); r.setAttribute('y', String(ypx)); r.setAttribute('width', String(wpx)); r.setAttribute('height', String(hpx));
+          r.setAttribute('stroke', color); g.appendChild(r);
+          if(toggleNums && toggleNums.checked){
+            const radius=9, cx=xpx+radius+3, cy=ypx+radius+3;
+            const c=document.createElementNS('http://www.w3.org/2000/svg','circle'); c.setAttribute('class','bbox-badge-circle'); c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(radius)); c.setAttribute('fill', color); g.appendChild(c);
+            const t=document.createElementNS('http://www.w3.org/2000/svg','text'); t.setAttribute('class','bbox-badge-text'); t.setAttribute('x', String(cx)); t.setAttribute('y', String(cy)); t.setAttribute('fill', textColor); t.textContent=String(i+1); g.appendChild(t);
+          }
+        });
+      }
+    }
     img.style.filter = toggleGray.checked? 'grayscale(100%)' : 'none';
   }
 
@@ -270,6 +380,41 @@
       }
       panels.appendChild(panel);
     });
+
+    // Render tables section (per selected tool)
+    (async () => {
+      if (!tablesTabs || !tablesPanels) return;
+      tablesTabs.innerHTML=''; tablesPanels.innerHTML='';
+      const perTool = await loadTablesForPage();
+      const ttools = tools;
+      ttools.forEach((tool, idx) => {
+        const btn = document.createElement('button'); btn.textContent = tool; btn.setAttribute('role','tab'); btn.setAttribute('aria-selected', String(idx===0));
+        btn.onclick = ()=>{
+          $$('.tabs button', tablesTabs).forEach(b=>b.setAttribute('aria-selected','false'));
+          btn.setAttribute('aria-selected','true');
+          $$('.panel', tablesPanels).forEach(p=>p.setAttribute('aria-hidden','true'));
+          document.getElementById('tables_panel_'+tool)?.setAttribute('aria-hidden','false');
+        };
+        tablesTabs.appendChild(btn);
+        const panel = document.createElement('div'); panel.id='tables_panel_'+tool; panel.className='panel'; panel.setAttribute('aria-hidden', String(idx!==0));
+        const tables = perTool[tool] || [];
+        if (!tables.length) {
+          const p = document.createElement('p'); p.textContent = 'No tables found for this page/tool.'; panel.appendChild(p);
+        } else {
+          tables.forEach((t, i) => {
+            const tbl = document.createElement('table'); tbl.style.borderCollapse='collapse'; tbl.style.marginBottom='0.75rem';
+            const caption = document.createElement('caption'); caption.textContent = `Table #${i+1}`; caption.style.textAlign = 'left'; tbl.appendChild(caption);
+            (t.rows||[]).forEach(row => {
+              const tr = document.createElement('tr');
+              row.forEach(cell => { const td = document.createElement('td'); td.textContent = cell; td.style.border='1px solid #ccc'; td.style.padding='4px 6px'; tr.appendChild(td); });
+              tbl.appendChild(tr);
+            });
+            panel.appendChild(tbl);
+          });
+        }
+        tablesPanels.appendChild(panel);
+      });
+    })();
   }
 
   function setupSelection(){
@@ -308,8 +453,30 @@
     pageInput.addEventListener('change', ()=>{ const v=parseInt(pageInput.value||'0'); if(!isNaN(v)){ state.page=Math.max(0, Math.min(state.pageCount-1, v)); loadPage(); }});
     docSelect.addEventListener('change', ()=> selectDoc(docSelect.value));
     opacity.addEventListener('input', renderOverlay);
-    toggleGray.addEventListener('change', renderOverlay);
+    toggleGray.addEventListener('change', ()=>{ loadPage(); });
+    if (toggleGrayServer) toggleGrayServer.addEventListener('change', ()=>{ if (toggleGray && toggleGray.checked) loadPage(); });
     toggleNums.addEventListener('change', renderOverlay);
+    if (clearSelBtn) { clearSelBtn.addEventListener('click', ()=>{ state.selection=null; renderOverlay(); renderBottom(); }); }
+    if(applyMergeBtn){
+      applyMergeBtn.addEventListener('click', async ()=>{
+        const boxesByTool = getBoxes();
+        const tools = state.selected.size? Array.from(state.selected) : Object.keys(boxesByTool);
+        try{
+          const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/merge`, {
+            method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode: mergeModeSel ? mergeModeSel.value : 'vertical', tools })
+          });
+          if(resp.ok){
+            const data = await resp.json();
+            const key = `${state.docId}:${state.page}:${mergeModeSel ? mergeModeSel.value : 'vertical'}:${tools.slice().sort().join(',')}`;
+            state.mergedCache.set(key, data);
+            renderOverlay();
+          }
+        } catch(e){}
+      });
+    }
+    if(toggleMerged){ toggleMerged.addEventListener('change', renderOverlay); }
+    if (toggleTextBoxes) toggleTextBoxes.addEventListener('change', renderOverlay);
+    if (toggleTableBoxes) toggleTableBoxes.addEventListener('change', async ()=>{ if(toggleTableBoxes.checked) await loadTableBoxes(); renderOverlay(); });
     exportBtn.onclick = async ()=>{
       const body = { state: { page: state.page, selected: Array.from(state.selected), selection: state.selection }};
       const r = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/export`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
