@@ -98,6 +98,20 @@ def get_run(run_id: int) -> Optional[Dict]:
     return None
 
 
+def delete_run_entry(run_id: int) -> bool:
+    runs = STATE.get("runs", [])
+    idx = None
+    for i, r in enumerate(runs):
+        if r.get("id") == run_id:
+            idx = i
+            break
+    if idx is not None:
+        runs.pop(idx)
+        save_json(STATE_FILE, STATE)
+        return True
+    return False
+
+
 def run_benchmark_job(run_id: int):
     run = get_run(run_id)
     if not run:
@@ -493,6 +507,24 @@ def artifact(path: str):
     if not p.exists():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(str(p))
+
+
+@app.delete("/api/runs/{run_id}")
+def api_delete_run(run_id: int):
+    # Remove results directory and state entry
+    out_dir = RESULTS_DIR / f"run_{run_id}"
+    try:
+        if out_dir.exists():
+            # Recursively delete
+            import shutil
+            shutil.rmtree(out_dir, ignore_errors=True)
+    except Exception:
+        # continue; attempt to remove state even if files fail
+        pass
+    ok = delete_run_entry(run_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {"ok": True}
 
 
 # -------------------------

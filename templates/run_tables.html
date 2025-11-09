@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>Run #{{ run.id }} - Tables</h2>
+<p>
+  <button class="btn btn-danger" id="deleteRunBtn" data-run-id="{{ run.id }}">Delete Run</button>
+  <a class="btn" href="/">Back</a>
+  <a class="btn" href="/runs/{{ run.id }}">Details</a>
+</p>
 
 {% if converters %}
   <div>
@@ -88,6 +93,21 @@
     if (docs && docs.length) { docSelect.value = docs[0]; }
     populatePages();
     renderTables();
+  </script>
+  <script>
+    (function(){
+      const delBtn = document.getElementById('deleteRunBtn');
+      if (delBtn) {
+        delBtn.addEventListener('click', async () => {
+          const id = delBtn.getAttribute('data-run-id');
+          if (!id) return;
+          if (!confirm(`Delete run #${id}? This will remove its results.`)) return;
+          try { const resp = await fetch(`/api/runs/${id}`, { method: 'DELETE' });
+            if (resp.ok) { window.location.href = '/'; } else { alert('Failed to delete run'); }
+          } catch { alert('Error deleting run'); }
+        });
+      }
+    })();
   </script>
 {% else %}
   <p>No tables were extracted for this run. Ensure table extraction is enabled and a supported engine like <code>pdfplumber</code> is used.</p>

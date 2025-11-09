@@ -3,6 +3,10 @@
 <h2>Run #{{ run.id }}</h2>
 <p>Status: <strong>{{ run.status }}</strong></p>
 <p>Created: {{ run.created_at }}</p>
+<p>
+  <button class="btn btn-danger" id="deleteRunBtn" data-run-id="{{ run.id }}">Delete Run</button>
+  <a class="btn" href="/">Back</a>
+</p>
 <h3>Inputs</h3>
 <ul>
   <li>Files: <code>{{ run.files|join(', ') }}</code></li>
@@ -27,5 +31,18 @@
 </p>
 {% endif %}
 
-<p><a class="btn" href="/">Back</a></p>
+<script>
+  const delBtn = document.getElementById('deleteRunBtn');
+  if (delBtn) {
+    delBtn.addEventListener('click', async () => {
+      const id = delBtn.getAttribute('data-run-id');
+      if (!id) return;
+      if (!confirm(`Delete run #${id}? This will remove its results.`)) return;
+      try {
+        const resp = await fetch(`/api/runs/${id}`, { method: 'DELETE' });
+        if (resp.ok) { window.location.href = '/'; } else { alert('Failed to delete run'); }
+      } catch { alert('Error deleting run'); }
+    });
+  }
+</script>
 {% endblock %}

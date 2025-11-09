@@ -24,3 +24,19 @@
 .panel { display: none; }
 .panel[aria-hidden="false"] { display: block; }
 .warn { color: #a86400; font-size: 12px; }
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .viewer-layout { grid-template-columns: 1fr; }
+  .viewer-side { order: 1; }
+  .viewer-main { order: 2; }
+  .viewport { height: 50vh; }
+  .legend { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .toolbar { flex-wrap: wrap; gap: 6px; }
+  .viewport { height: 45vh; }
+  .legend { grid-template-columns: repeat(2, 1fr); }
+  .group label, .group input, .group select { max-width: 100%; }
+}

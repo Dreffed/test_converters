@@ -32,10 +32,24 @@
             <a class="btn" href="/runs/{{ r.id }}">Details</a>
             <a class="btn" href="/runs/{{ r.id }}/view">Viewer</a>
             <a class="btn" href="/runs/{{ r.id }}/tables">Tables</a>
+            <button class="btn btn-danger delete-run" data-run-id="{{ r.id }}">Delete</button>
           </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
+<script>
+  document.querySelectorAll('.delete-run').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = btn.getAttribute('data-run-id');
+      if (!id) return;
+      if (!confirm(`Delete run #${id}? This will remove its results.`)) return;
+      try {
+        const resp = await fetch(`/api/runs/${id}`, { method: 'DELETE' });
+        if (resp.ok) { location.reload(); } else { alert('Failed to delete run'); }
+      } catch { alert('Error deleting run'); }
+    });
+  });
+  </script>
 {% endblock %}
