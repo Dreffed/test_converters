@@ -1,0 +1,23 @@
+.viewer-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+.viewer-side { border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
+.viewer-main { display: flex; flex-direction: column; min-height: 60vh; }
+.group { margin-bottom: 12px; }
+.row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.legend .item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.legend .swatch { width: 14px; height: 14px; border: 1px solid #999; }
+.toolbar { display: flex; align-items: center; gap: 8px; border: 1px solid #ddd; padding: 6px 8px; border-radius: 6px; }
+.toolbar .spacer { flex: 1; }
+.viewport { position: relative; overflow: auto; border: 1px solid #ddd; margin-top: 8px; border-radius: 6px; height: 60vh; }
+.canvas { position: relative; transform-origin: 0 0; }
+#pageImg { display: block; max-width: 100%; height: auto; }
+#overlay { position: absolute; left: 0; top: 0; pointer-events: none; }
+.select-rect { fill: rgba(0, 128, 255, 0.1); stroke: #0080ff; stroke-width: 1; }
+.bbox { fill: none; stroke-width: 2; }
+.bbox-label { font-size: 11px; fill: #000; stroke: #fff; stroke-width: 0.5; paint-order: stroke; }
+.bottom-panel { border-top: 1px solid #ddd; margin-top: 8px; padding-top: 8px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 6px; }
+.tabs button[aria-selected="true"] { font-weight: 600; }
+.panel { display: none; }
+.panel[aria-hidden="false"] { display: block; }
+.warn { color: #a86400; font-size: 12px; }

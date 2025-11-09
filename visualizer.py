@@ -226,6 +226,9 @@ class Visualizer:
         # For export: canonical union blocks per page
         export_blocks: Dict[int, List[Dict]] = {}
 
+        # Prepare per-engine export structure with stable ids
+        boxes_by_engine: Dict[int, Dict[str, List[Dict]]] = {}
+
         for page_idx, (img_path, w, h) in enumerate(rendered):
             # Collect blocks for each engine on this page
             blocks_by_engine: Dict[str, List[TextBlock]] = {}
@@ -238,6 +241,27 @@ class Visualizer:
                        for b in raw]
                 if tbs:
                     blocks_by_engine[eng] = tbs
+            # Build per-engine export (with ids, normalized bbox)
+            if blocks_by_engine:
+                page_export: Dict[str, List[Dict]] = {}
+                for eng, tbs in blocks_by_engine.items():
+                    page_export[eng] = []
+                    for i, b in enumerate(tbs):
+                        bbox = {
+                            'x': max(0.0, min(1.0, float(b.x0))),
+                            'y': max(0.0, min(1.0, float(b.y0))),
+                            'w': max(0.0, min(1.0, float(b.x1 - b.x0))),
+                            'h': max(0.0, min(1.0, float(b.y1 - b.y0))),
+                        }
+                        page_export[eng].append({
+                            'id': f"{eng}-p{page_idx}-i{i}",
+                            'page': page_idx,
+                            'tool': eng,
+                            'type': 'block',
+                            'bbox': bbox,
+                            'text': b.text,
+                        })
+                boxes_by_engine[page_idx] = page_export
 
             if not blocks_by_engine:
                 per_page_metrics.append({'page': page_idx, 'union': 0, 'engines': {}})
@@ -316,8 +340,18 @@ class Visualizer:
         with open(doc_out_dir / 'visual_metrics.json', 'w', encoding='utf-8') as f:
             json.dump(metrics, f, indent=2)
 
+        # Always export per-engine blocks for UI consumption
+        try:
+            with open(doc_out_dir / 'visual_blocks_by_engine.json', 'w', encoding='utf-8') as f:
+                json.dump(boxes_by_engine, f, indent=2)
+        except Exception:
+            pass
+
         if export_blocks_json:
-            with open(doc_out_dir / 'visual_blocks.json', 'w', encoding='utf-8') as f:
-                json.dump(export_blocks, f, indent=2)
+            try:
+                with open(doc_out_dir / 'visual_blocks.json', 'w', encoding='utf-8') as f:
+                    json.dump(export_blocks, f, indent=2)
+            except Exception:
+                pass
 
         return metrics

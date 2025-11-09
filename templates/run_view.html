@@ -1,107 +1,56 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>Run #{{ run.id }} — Viewer</h2>
+<h2>Run #{{ run.id }} — Composite Viewer</h2>
 
-<div style="display:flex; gap: 2rem; align-items:flex-start;">
-  <div style="flex: 1 1 50%; max-width:50%; overflow:auto;">
-    <h3>Summary</h3>
-    {% if summary_html %}
-      <div class="md">{{ summary_html | safe }}</div>
-    {% else %}
-      <p>No summary available.</p>
-    {% endif %}
-  </div>
-  <div style="flex: 1 1 50%; max-width:50%;">
-    <h3>Visual Overlays</h3>
-    <div>
-      <label>Document:
-        <select id="docSelect"></select>
-      </label>
-      <label>Page:
-        <input id="pageInput" type="number" min="0" value="0" style="width:6rem;"/>
-      </label>
-      <label>Layer:
-        <select id="layerSelect">
-          <option value="base">base</option>
-          <option value="composite">composite</option>
-        </select>
-      </label>
-      <label>Engine:
-        <select id="engineSelect">
-          <option value="">(none)</option>
-        </select>
-      </label>
+<link rel="stylesheet" href="/static/css/viewer.css" />
+
+<div class="viewer-layout">
+  <aside class="viewer-side">
+    <div class="group">
+      <label>Document</label>
+      <select id="docSelect" aria-label="Document"></select>
+      <div id="pageLimitWarn" class="warn" hidden>Showing first 10 pages. <button id="overrideLimit">Show all</button></div>
     </div>
-    <div style="margin-top: 1rem; border:1px solid #ccc; padding:0.5rem;">
-      <img id="viewer" src="" alt="page" style="max-width:100%; height:auto;"/>
+    <div class="group">
+      <div class="row"><input id="toggleGray" type="checkbox"/> <label for="toggleGray">Grayscale</label></div>
+      <div class="row"><input id="toggleNums" type="checkbox"/> <label for="toggleNums">Show BBox Numbers</label></div>
+      <label>Overlay Opacity <input id="opacity" type="range" min="0" max="100" value="70"/></label>
     </div>
-  </div>
+    <div class="group">
+      <label>Parsers</label>
+      <div id="parsers"></div>
+      <div id="legend" class="legend"></div>
+    </div>
+    <div class="group">
+      <button id="exportBtn">Export Package</button>
+    </div>
+  </aside>
+  <main class="viewer-main">
+    <div class="toolbar">
+      <button id="prevBtn">Prev</button>
+      <span>Page <input id="pageInput" type="number" min="0" value="0"/> / <span id="pageTotal">0</span></span>
+      <button id="nextBtn">Next</button>
+      <span class="spacer"></span>
+      <button id="zoomOut">-</button>
+      <button id="zoomReset">100%</button>
+      <button id="zoomIn">+</button>
+    </div>
+    <div id="viewport" class="viewport">
+      <div id="canvas" class="canvas">
+        <img id="pageImg" alt="page" />
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+    <section class="bottom-panel">
+      <div class="tabs" id="resultTabs"></div>
+      <div class="tab-panels" id="resultPanels"></div>
+    </section>
+  </main>
 </div>
 
 <script>
-  const visualIndex = {{ visual_index_json | safe }};
-  const docSelect = document.getElementById('docSelect');
-  const pageInput = document.getElementById('pageInput');
-  const layerSelect = document.getElementById('layerSelect');
-  const engineSelect = document.getElementById('engineSelect');
-  const viewer = document.getElementById('viewer');
-
-  function populateDocs() {
-    docSelect.innerHTML = '';
-    visualIndex.forEach((d, i) => {
-      const opt = document.createElement('option');
-      opt.value = i; opt.textContent = d.doc;
-      docSelect.appendChild(opt);
-    });
-  }
-
-  function getDoc() { return visualIndex[parseInt(docSelect.value||'0')]; }
-  function getPageEntry(doc, pageIdx) {
-    return doc.pages.find(p => p.page === pageIdx) || null;
-  }
-
-  function updateEngineOptions() {
-    const doc = getDoc();
-    const pageIdx = parseInt(pageInput.value||'0');
-    const entry = getPageEntry(doc, pageIdx);
-    engineSelect.innerHTML = '<option value="">(none)</option>';
-    if (entry && entry.engines) {
-      Object.keys(entry.engines).sort().forEach(eng => {
-        const opt = document.createElement('option');
-        opt.value = eng; opt.textContent = eng;
-        engineSelect.appendChild(opt);
-      });
-    }
-  }
-
-  function artifactUrl(path) {
-    // Encode full path for /api/artifacts
-    return '/api/artifacts?path=' + encodeURIComponent(path);
-  }
-
-  function updateViewer() {
-    const doc = getDoc();
-    const pageIdx = parseInt(pageInput.value||'0');
-    const entry = getPageEntry(doc, pageIdx);
-    if (!entry) { viewer.src=''; return; }
-    let src = entry.base;
-    const layer = layerSelect.value;
-    const eng = engineSelect.value;
-    if (layer === 'composite' && entry.composite) src = entry.composite;
-    if (eng && entry.engines && entry.engines[eng]) src = entry.engines[eng];
-    viewer.src = artifactUrl(src);
-  }
-
-  docSelect.addEventListener('change', () => { updateEngineOptions(); updateViewer(); });
-  pageInput.addEventListener('change', () => { updateEngineOptions(); updateViewer(); });
-  layerSelect.addEventListener('change', updateViewer);
-  engineSelect.addEventListener('change', () => { layerSelect.value='base'; updateViewer(); });
-
-  // init
-  populateDocs();
-  docSelect.value = '0';
-  updateEngineOptions();
-  updateViewer();
+  window.__RUN_ID__ = {{ run.id }};
+  window.__VISUAL_INDEX__ = {{ visual_index_json | safe }};
 </script>
+<script src="/static/js/run_view.js"></script>
 {% endblock %}
-

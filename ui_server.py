@@ -444,3 +444,211 @@ def artifact(path: str):
     if not p.exists():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(str(p))
+
+
+# -------------------------
+# New APIs for composite UI
+# -------------------------
+
+_COLOR_MAP = {
+    'pymupdf': '#00FF00',
+    'pdfplumber': '#FF0000',
+    'pypdf2': '#0000FF',
+    'tesseract': '#FFFF00',
+    'markitdown': '#FF00FF',
+    'pdfminer': '#00FFFF',
+}
+
+
+def _run_visual_root(run_id: int) -> Path:
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    art = run.get("artifacts") or {}
+    visual_dir = art.get("visual_dir")
+    if not visual_dir:
+        raise HTTPException(status_code=404, detail="No visual artifacts for this run")
+    vdir = Path(visual_dir)
+    if not vdir.exists():
+        raise HTTPException(status_code=404, detail="Visual directory missing")
+    return vdir
+
+
+@app.get("/api/runs/{run_id}/docs")
+def api_docs(run_id: int):
+    vdir = _run_visual_root(run_id)
+    docs = []
+    for doc_dir in sorted([d for d in vdir.iterdir() if d.is_dir()]):
+        base_pages = sorted(doc_dir.glob('page_*.png'))
+        pages = len(base_pages)
+        engines = []
+        # Overlays may be in subdir or same dir; scan both
+        candidates = [doc_dir] + [d for d in doc_dir.iterdir() if d.is_dir()]
+        seen = set()
+        for cdir in candidates:
+            for img in cdir.glob('page_*_*.png'):
+                stem = img.stem
+                if stem.endswith('_composite'):
+                    continue
+                eng = stem.split('_', 3)[-1]
+                if eng and eng not in seen:
+                    engines.append(eng)
+                    seen.add(eng)
+        docs.append({
+            'id': doc_dir.name,
+            'pages': pages,
+            'engines': sorted(engines)
+        })
+    return { 'docs': docs, 'colors': _COLOR_MAP }
+
+
+def _doc_dir_for(run_id: int, doc: str) -> Path:
+    vdir = _run_visual_root(run_id)
+    d = vdir / doc
+    if not d.exists():
+        raise HTTPException(status_code=404, detail="Doc not found")
+    return d
+
+
+def _load_boxes_by_engine(doc_dir: Path) -> Optional[Dict]:
+    p = doc_dir / 'visual_blocks_by_engine.json'
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding='utf-8'))
+        except Exception:
+            return None
+    return None
+
+
+def _load_boxes_from_detailed(run_id: int, doc: str) -> Dict[int, Dict[str, List[Dict]]]:
+    run = get_run(run_id)
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    result: Dict[int, Dict[str, List[Dict]]] = {}
+    if not details_path or not Path(details_path).exists():
+        return result
+    try:
+        results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+        for r in results:
+            conv = r.get('converter_name')
+            fp = r.get('file_path') or ''
+            base = os.path.splitext(os.path.basename(fp))[0]
+            if base != doc:
+                continue
+            meta = r.get('metadata') or {}
+            bpp = meta.get('blocks_per_page') or {}
+            for k, v in bpp.items():
+                try:
+                    pidx = int(k)
+                except Exception:
+                    continue
+                lst = result.setdefault(pidx, {}).setdefault(conv, [])
+                for i, b in enumerate(v):
+                    x0 = float(b.get('x0', 0.0)); y0 = float(b.get('y0', 0.0))
+                    x1 = float(b.get('x1', 0.0)); y1 = float(b.get('y1', 0.0))
+                    lst.append({
+                        'id': f"{conv}-p{pidx}-i{i}",
+                        'page': pidx,
+                        'tool': conv,
+                        'type': 'block',
+                        'bbox': {'x': x0, 'y': y0, 'w': max(0.0, x1-x0), 'h': max(0.0, y1-y0)},
+                        'text': b.get('text', '')
+                    })
+    except Exception:
+        return {}
+    return result
+
+
+@app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/bboxes")
+def api_bboxes(run_id: int, doc: str, page: int, tools: Optional[str] = None, withText: int = 1, withIds: int = 1):
+    doc_dir = _doc_dir_for(run_id, doc)
+    boxes_by_engine = _load_boxes_by_engine(doc_dir)
+    if boxes_by_engine is None:
+        boxes_by_engine = _load_boxes_from_detailed(run_id, doc)
+    if boxes_by_engine is None:
+        raise HTTPException(status_code=404, detail="No boxes available")
+    page_data = boxes_by_engine.get(str(page)) or boxes_by_engine.get(page) or {}
+    if tools:
+        keep = set([t for t in tools.split(',') if t])
+        page_data = {k: v for k, v in page_data.items() if k in keep}
+    # Optionally strip text/ids
+    if not withText:
+        for lst in page_data.values():
+            for b in lst:
+                b.pop('text', None)
+    if not withIds:
+        for lst in page_data.values():
+            for b in lst:
+                b.pop('id', None)
+    return { 'page': page, 'tools': list(page_data.keys()), 'boxes': page_data }
+
+
+@app.post("/api/runs/{run_id}/doc/{doc}/state")
+async def api_save_state(run_id: int, doc: str, request: Request):
+    payload = await request.json()
+    run_dir = RESULTS_DIR / f"run_{run_id}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    f = run_dir / f"ui_state_{doc}.json"
+    try:
+        f.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save state: {e}")
+    return { 'ok': True, 'path': str(f) }
+
+
+@app.post("/api/runs/{run_id}/doc/{doc}/export")
+async def api_export(run_id: int, doc: str, request: Request):
+    # Basic export: package images, overlays (SVG), boxes JSON, and manifest
+    doc_dir = _doc_dir_for(run_id, doc)
+    payload = await request.json() if request.headers.get('content-type','').startswith('application/json') else {}
+    export_dir = RESULTS_DIR / f"run_{run_id}" / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime('%Y%m%d_%H%M%S')
+    zip_path = export_dir / f"{doc}_{ts}.zip"
+
+    # Create simple SVG overlays from boxes_by_engine
+    boxes_by_engine = _load_boxes_by_engine(doc_dir)
+    if boxes_by_engine is None:
+        boxes_by_engine = _load_boxes_from_detailed(run_id, doc)
+
+    import io
+    import zipfile
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as z:
+        # Add page images
+        for img in sorted(doc_dir.glob('page_*.png')):
+            z.write(img, arcname=f"images/{img.name}")
+        # Add composites if present
+        for cdir in [doc_dir] + [d for d in doc_dir.iterdir() if d.is_dir()]:
+            for comp in cdir.glob('page_*_composite.png'):
+                z.write(comp, arcname=f"images/{comp.name}")
+        # Add JSON
+        if boxes_by_engine:
+            data = json.dumps(boxes_by_engine, indent=2).encode('utf-8')
+            z.writestr('boxes_by_engine.json', data)
+        # Naive summary CSV (counts per page/tool)
+        try:
+            import csv
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(['page','tool','count'])
+            # boxes_by_engine keys may be str/int
+            for pk in sorted(boxes_by_engine.keys(), key=lambda x: int(x)):
+                entry = boxes_by_engine[pk]
+                for tool, lst in entry.items():
+                    w.writerow([pk, tool, len(lst)])
+            z.writestr('summary.csv', buf.getvalue())
+        except Exception:
+            pass
+        # Manifest
+        manifest = {
+            'run_id': run_id,
+            'doc': doc,
+            'generated_at': ts,
+            'artifacts': {
+                'images_dir': 'images/',
+                'boxes_json': 'boxes_by_engine.json',
+                'summary_csv': 'summary.csv'
+            }
+        }
+        z.writestr('manifest.json', json.dumps(manifest, indent=2))
+    return FileResponse(str(zip_path), filename=zip_path.name)
