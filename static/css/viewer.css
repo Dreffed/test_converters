@@ -34,7 +34,8 @@
 .viewer-menu { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; border: 1px solid #ddd; border-radius: 6px; padding: 6px; background: #fafafa; }
 .viewer-menu .menu { position: relative; }
 .viewer-menu .menu-title { border: 1px solid #ccc; background: #fff; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
-.viewer-menu .menu-content { display: none; position: absolute; z-index: 20; min-width: 260px; background: #fff; border: 1px solid #ccc; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 6px; padding: 10px; top: calc(100% + 6px); left: 0; }
+.viewer-menu .menu { padding-bottom: 6px; }
+.viewer-menu .menu-content { display: none; position: absolute; z-index: 20; min-width: 260px; background: #fff; border: 1px solid #ccc; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 6px; padding: 10px; top: 100%; left: 0; }
 .viewer-menu .menu:hover .menu-content { display: block; }
 .viewer-menu .menu .group { margin-bottom: 8px; }
 

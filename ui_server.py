@@ -334,7 +334,20 @@ def run_detail(request: Request, run_id: int):
     run = get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return templates.TemplateResponse("run_detail.html", {"request": request, "run": run})
+    # Render summary markdown if available
+    summary_html = None
+    art = run.get("artifacts") or {}
+    summary_path = art.get("summary")
+    if summary_path and Path(summary_path).exists():
+        try:
+            summary_md = Path(summary_path).read_text(encoding='utf-8', errors='ignore')
+            try:
+                summary_html = md.markdown(summary_md, extensions=['tables', 'fenced_code'])
+            except Exception:
+                summary_html = md.markdown(summary_md)
+        except Exception:
+            summary_html = None
+    return templates.TemplateResponse("run_detail.html", {"request": request, "run": run, "summary_html": summary_html})
 
 
 @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
@@ -1554,6 +1567,54 @@ def api_get_consolidated(run_id: int, doc: str, page: int, tool: str, strategy: 
         except Exception:
             pass
     return {'boxes': [], 'merged_groups': [], 'layout_groups': []}
+
+
+@app.post("/api/runs/{run_id}/enrich_details")
+def api_enrich_details(run_id: int):
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    art = run.get('artifacts') or {}
+    details_path = art.get('details')
+    if not details_path or not Path(details_path).exists():
+        raise HTTPException(status_code=404, detail="Detailed results JSON not found")
+    try:
+        results = json.loads(Path(details_path).read_text(encoding='utf-8'))
+        # Group per file: engine -> blocks_per_page
+        per_file: Dict[str, Dict[str, Dict[int, List[Dict]]]] = {}
+        for r in results:
+            if not r.get('success'): continue
+            fp = r.get('file_path')
+            conv = r.get('converter_name')
+            meta = r.get('metadata') or {}
+            bpp = meta.get('blocks_per_page') or {}
+            if bpp:
+                # normalize keys to int
+                pages_int = {}
+                for k,v in bpp.items():
+                    try: pages_int[int(k)] = v
+                    except Exception: continue
+                if pages_int:
+                    per_file.setdefault(fp, {})[conv] = pages_int
+        # Reuse benchmark enrichment helper
+        from converter_benchmark import DocumentConverterBenchmark
+        bench = DocumentConverterBenchmark(output_dir=str(RESULTS_DIR / f"run_{run_id}"))
+        bench.results = []
+        for r in results:
+            bench.results.append(type('Tmp', (), r)())
+        for file_path, engines_pages in per_file.items():
+            bench._enrich_results_with_block_text_and_groups(file_path, engines_pages)
+        # Write updated results back
+        enriched = []
+        for obj in bench.results:
+            d = obj.__dict__ if hasattr(obj, '__dict__') else obj
+            enriched.append(d)
+        Path(details_path).write_text(json.dumps(enriched, indent=2), encoding='utf-8')
+        return { 'ok': True, 'details': details_path }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enrich: {e}")
 
 
 @app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/words")

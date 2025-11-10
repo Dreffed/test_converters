@@ -62,6 +62,88 @@
   </script>
   {% endif %}
 
+  {% if summary_html %}
+  <h3>Summary (Markdown)</h3>
+  <div class="md" id="summaryMd">{{ summary_html | safe }}</div>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    // Transform fenced ```mermaid code blocks into <div class="mermaid"> for rendering
+    (function(){
+      const root = document.getElementById('summaryMd');
+      if (!root) return;
+      const blocks = root.querySelectorAll('pre > code');
+      blocks.forEach(code => {
+        const cls = code.className || '';
+        if (/(^|\s)language-mermaid(\s|$)|(\s)mermaid(\s|$)/.test(cls)){
+          const pre = code.parentElement;
+          const div = document.createElement('div');
+          div.className = 'mermaid';
+          div.textContent = code.textContent || '';
+          pre.replaceWith(div);
+        }
+      });
+      if (window.mermaid){
+        try { window.mermaid.initialize({ startOnLoad: true }); } catch(e){}
+      }
+    })();
+  </script>
+  {% endif %}
+
+  <h3>JSON Viewer</h3>
+  <div>
+    <label for="jsonSelect">Select JSON</label>
+    <select id="jsonSelect">
+      {% if run.artifacts.report %}<option value="{{ run.artifacts.report }}">Benchmark Report</option>{% endif %}
+      {% if run.artifacts.details %}<option value="{{ run.artifacts.details }}">Detailed Results</option>{% endif %}
+    </select>
+    <button id="refreshAnalysisBtn" class="btn">Update Consolidation & Merge</button>
+  </div>
+  <div id="jsonTree" style="border:1px solid #ddd; border-radius:6px; padding:8px; max-height: 420px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 13px;"></div>
+  <script>
+    function renderNode(key, value){
+      if (value && typeof value === 'object'){
+        const det = document.createElement('details');
+        const sum = document.createElement('summary'); sum.textContent = key + (Array.isArray(value)? ' [ ]' : ' { }');
+        det.appendChild(sum);
+        if (Array.isArray(value)){
+          value.forEach((v, i)=> det.appendChild(renderNode(String(i), v)));
+        } else {
+          Object.keys(value).forEach(k=> det.appendChild(renderNode(k, value[k])));
+        }
+        return det;
+      } else {
+        const div = document.createElement('div');
+        const span = document.createElement('span'); span.textContent = key + ': ';
+        const code = document.createElement('code'); code.textContent = (value===null? 'null' : String(value));
+        div.appendChild(span); div.appendChild(code);
+        return div;
+      }
+    }
+    async function loadJson(path){
+      const tree = document.getElementById('jsonTree'); tree.innerHTML = 'Loading...';
+      try{
+        const resp = await fetch('/api/artifacts?path=' + encodeURIComponent(path));
+        if(!resp.ok){ tree.textContent='Failed to load JSON'; return; }
+        const data = await resp.json();
+        tree.innerHTML='';
+        const root = renderNode('root', data); root.setAttribute('open',''); tree.appendChild(root);
+      } catch(e){ tree.textContent='Error loading JSON'; }
+    }
+    (function(){ const sel=document.getElementById('jsonSelect'); if(sel){ sel.addEventListener('change', ()=> loadJson(sel.value)); if (sel.value) loadJson(sel.value); } })();
+    (function(){
+      const btn = document.getElementById('refreshAnalysisBtn');
+      if (!btn) return;
+      btn.addEventListener('click', async ()=>{
+        btn.disabled = true; btn.textContent = 'Updating...';
+        try{
+          const resp = await fetch(`/api/runs/{{ run.id }}/enrich_details`, { method:'POST' });
+          if (resp.ok){ alert('Consolidation & merge data updated in detailed results.'); } else { alert('Update failed'); }
+        } catch { alert('Error updating'); }
+        finally { btn.disabled = false; btn.textContent = 'Update Consolidation & Merge'; }
+      });
+    })();
+  </script>
+
 <p>
   <a class="btn" href="/runs/{{ run.id }}/view">Open Viewer</a>
   <a class="btn" href="/runs/{{ run.id }}/tables">Tables</a>
