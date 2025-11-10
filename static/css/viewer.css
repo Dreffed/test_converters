@@ -1,4 +1,4 @@
-.viewer-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+.viewer-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .viewer-side { border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
 .viewer-main { display: flex; flex-direction: column; min-height: 60vh; }
 .group { margin-bottom: 12px; }
@@ -29,6 +29,23 @@
 .panel { display: none; }
 .panel[aria-hidden="false"] { display: block; }
 .warn { color: #a86400; font-size: 12px; }
+
+/* Horizontal menu */
+.viewer-menu { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; border: 1px solid #ddd; border-radius: 6px; padding: 6px; background: #fafafa; }
+.viewer-menu .menu { position: relative; }
+.viewer-menu .menu-title { border: 1px solid #ccc; background: #fff; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+.viewer-menu .menu-content { display: none; position: absolute; z-index: 20; min-width: 260px; background: #fff; border: 1px solid #ccc; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-radius: 6px; padding: 10px; top: calc(100% + 6px); left: 0; }
+.viewer-menu .menu:hover .menu-content { display: block; }
+.viewer-menu .menu .group { margin-bottom: 8px; }
+
+/* Status viewer */
+.status-viewer { margin-top: 8px; border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; background: #fff; font-size: 13px; }
+.status-viewer ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.status-viewer li { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px; border: 1px solid #eee; border-radius: 4px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; display: inline-block; }
+.status-busy { background: #e6a700; }
+.status-ok { background: #2e8b57; }
+.status-fail { background: #b00020; }
 
 /* Responsive */
 @media (max-width: 1024px) {

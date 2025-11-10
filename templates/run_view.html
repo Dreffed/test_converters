@@ -13,61 +13,93 @@
 <link rel="stylesheet" href="/static/css/viewer.css" />
 
 <div class="viewer-layout">
-  <aside class="viewer-side">
-    <div class="group">
-      <label for="docSelect">Document</label>
-      <select id="docSelect" aria-label="Document"></select>
-      <div id="pageLimitWarn" class="warn" hidden>Showing first 10 pages. <button id="overrideLimit">Show all</button></div>
-    </div>
-    <div class="group">
-      <div class="row"><input id="toggleGray" type="checkbox"/> <label for="toggleGray">Grayscale</label></div>
-      <div class="row"><input id="toggleGrayServer" type="checkbox"/> <label for="toggleGrayServer">Use server grayscale</label></div>
-      <div class="row"><input id="toggleNums" type="checkbox"/> <label for="toggleNums">Show BBox Numbers</label></div>
-      <label>Overlay Opacity <input id="opacity" type="range" min="0" max="100" value="70"/></label>
-    </div>
-    <div class="group">
-      <label>Parsers</label>
-      <div id="parsers"></div>
-      <div id="legend" class="legend"></div>
-    </div>
-    <div class="group">
-      <label for="mergeMode">Merge</label>
-      <select id="mergeMode" aria-label="Merge mode">
-        <option value="vertical">Vertical</option>
-        <option value="horizontal">Horizontal</option>
-        <option value="paragraph">Paragraph</option>
-      </select>
-      <div class="row">
-        <button id="applyMerge">Apply Merge</button>
+  <div class="viewer-menu">
+    <div class="menu">
+      <button class="menu-title">Document ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <label for="docSelect">Document</label>
+          <select id="docSelect" aria-label="Document"></select>
+          <div id="pageLimitWarn" class="warn" hidden>Showing first 10 pages. <button id="overrideLimit">Show all</button></div>
+        </div>
       </div>
     </div>
-    <div class="group">
-      <label>Overlay Types</label>
-      <div class="row"><input id="toggleTextBoxes" type="checkbox" checked/> <label for="toggleTextBoxes">Text BBoxes</label></div>
-      <div class="row"><input id="toggleMerged" type="checkbox"/> <label for="toggleMerged">Merged BBoxes</label></div>
-      <div class="row"><input id="toggleTableBoxes" type="checkbox"/> <label for="toggleTableBoxes">Table BBoxes</label></div>
+    <div class="menu">
+      <button class="menu-title">View ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <div class="row"><input id="toggleGray" type="checkbox"/> <label for="toggleGray">Grayscale</label></div>
+          <div class="row"><input id="toggleGrayServer" type="checkbox"/> <label for="toggleGrayServer">Use server grayscale</label></div>
+          <div class="row"><input id="toggleNums" type="checkbox"/> <label for="toggleNums">Show BBox Numbers</label></div>
+          <label>Overlay Opacity <input id="opacity" type="range" min="0" max="100" value="70"/></label>
+        </div>
       </div>
-    <div class="group">
-      <label for="consTool">Consolidation Tool</label>
-      <select id="consTool"></select>
-      <label for="consStrategy">Strategy</label>
-      <select id="consStrategy">
-        <option value="overlap">Overlap Merge</option>
-        <option value="vertical_centers">Vertical Centers</option>
-        <option value="paragraph">Paragraph</option>
-      </select>
-      <div class="row">
-        <button id="runCons">Run Consolidation</button>
+    </div>
+    <div class="menu">
+      <button class="menu-title">Parsers ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <label>Parsers</label>
+          <div id="parsers"></div>
+          <div id="legend" class="legend"></div>
+        </div>
       </div>
-      <div class="row"><input id="showConsRedundant" type="checkbox"/> <label for="showConsRedundant">Show Redundant</label></div>
-      <div class="row"><input id="showConsUnique" type="checkbox"/> <label for="showConsUnique">Show Unique-Extra</label></div>
-      <div class="row"><input id="showConsGroups" type="checkbox"/> <label for="showConsGroups">Show Groups</label></div>
     </div>
+    <div class="menu">
+      <button class="menu-title">Overlays ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <div class="row"><input id="toggleTextBoxes" type="checkbox" checked/> <label for="toggleTextBoxes">Text BBoxes</label></div>
+          <div class="row"><input id="toggleMerged" type="checkbox"/> <label for="toggleMerged">Merged BBoxes</label></div>
+          <div class="row"><input id="toggleTableBoxes" type="checkbox"/> <label for="toggleTableBoxes">Table BBoxes</label></div>
+        </div>
+      </div>
     </div>
-    <div class="group">
-      <button id="exportBtn">Export Package</button>
+    <div class="menu">
+      <button class="menu-title">Merge ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <label for="mergeMode">Mode</label>
+          <select id="mergeMode" aria-label="Merge mode">
+            <option value="vertical">Vertical</option>
+            <option value="horizontal">Horizontal</option>
+            <option value="paragraph">Paragraph</option>
+          </select>
+          <div class="row"><button id="applyMerge">Apply Merge</button></div>
+        </div>
+      </div>
     </div>
-  </aside>
+    <div class="menu">
+      <button class="menu-title">Consolidation ▾</button>
+      <div class="menu-content">
+        <div class="group">
+          <label for="consTool">Tool</label>
+          <select id="consTool"></select>
+          <label for="consStrategy">Strategy</label>
+          <select id="consStrategy">
+            <option value="overlap">Overlap Merge</option>
+            <option value="vertical_centers">Vertical Centers</option>
+            <option value="paragraph">Paragraph</option>
+          </select>
+          <div class="row"><button id="runCons">Run Consolidation</button></div>
+          <div class="row"><input id="showConsRedundant" type="checkbox"/> <label for="showConsRedundant">Show Redundant</label></div>
+          <div class="row"><input id="showConsUnique" type="checkbox"/> <label for="showConsUnique">Show Unique-Extra</label></div>
+          <div class="row"><input id="showConsGroups" type="checkbox"/> <label for="showConsGroups">Show Groups</label></div>
+        </div>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menu-title">Export ▾</button>
+      <div class="menu-content">
+        <div class="group"><button id="exportBtn">Export Package</button></div>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menu-title">Selection ▾</button>
+      <div class="menu-content"><div class="group"><button id="clearSel">Clear Selection</button></div></div>
+    </div>
+  </div>
+  <div id="statusViewer" class="status-viewer"><ul><li><span class="status-dot"></span> Ready</li></ul></div>
   <main class="viewer-main">
     <div class="toolbar">
       <button id="prevBtn">Prev</button>

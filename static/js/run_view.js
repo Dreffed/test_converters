@@ -38,6 +38,7 @@
   const panels = $('#resultPanels');
   const tablesTabs = document.getElementById('tablesTabs');
   const tablesPanels = document.getElementById('tablesPanels');
+  const statusViewer = document.getElementById('statusViewer');
 
   const state = {
     docs: [], colors: {},
@@ -53,7 +54,25 @@
     mergedCache: new Map(), // key: `${docId}:${page}:${mode}:${toolsKey}` => groups
     tablesCache: new Map(), // key: `${docId}:${page}` => [{id,bbox}]
     consolidatedCache: new Map(), // key: `${docId}:${page}:${tool}:${strategy}` => {boxes, merged_groups, layout_groups}
+    statuses: {}
   };
+
+  function renderStatus(){
+    if (!statusViewer) return;
+    const ul = document.createElement('ul');
+    Object.entries(state.statuses).forEach(([k, v]) => {
+      const li = document.createElement('li');
+      const dot = document.createElement('span'); dot.className = 'status-dot ' + (v.busy ? 'status-busy' : (v.ok === false ? 'status-fail' : 'status-ok'));
+      const text = document.createElement('span'); text.textContent = v.text;
+      li.appendChild(dot); li.appendChild(text); ul.appendChild(li);
+    });
+    statusViewer.innerHTML = '';
+    statusViewer.appendChild(ul);
+  }
+  function setStatus(key, text, busy, ok){
+    state.statuses[key] = { text, busy: !!busy, ok };
+    renderStatus();
+  }
 
   function artifactUrl(path){ return '/api/artifacts?path=' + encodeURIComponent(path); }
 
@@ -165,13 +184,15 @@
     const strat = consStrategySel ? consStrategySel.value : 'overlap';
     if (!tool) return;
     try{
+      setStatus('consolidation', `Consolidating ${tool} (${strat})...`, true);
       const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/consolidate?tool=${encodeURIComponent(tool)}&strategy=${encodeURIComponent(strat)}`, { method: 'POST' });
       if (resp.ok) {
         const data = await resp.json();
         state.consolidatedCache.set(`${state.docId}:${state.page}:${tool}:${strat}`, data);
         renderOverlay();
+        setStatus('consolidation', `Consolidation ${tool} (${strat}) complete`, false, true);
       } else {
-        alert('Consolidation failed');
+        alert('Consolidation failed'); setStatus('consolidation', `Consolidation ${tool} failed`, false, false);
       }
     } catch {}
   }
@@ -564,6 +585,7 @@
         const boxesByTool = getBoxes();
         const tools = state.selected.size? Array.from(state.selected) : Object.keys(boxesByTool);
         try{
+          setStatus('merge', `Applying merge (${mergeModeSel ? mergeModeSel.value : 'vertical'})...`, true);
           const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/merge`, {
             method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode: mergeModeSel ? mergeModeSel.value : 'vertical', tools })
           });
@@ -572,6 +594,7 @@
             const key = `${state.docId}:${state.page}:${mergeModeSel ? mergeModeSel.value : 'vertical'}:${tools.slice().sort().join(',')}`;
             state.mergedCache.set(key, data);
             renderOverlay();
+            setStatus('merge', `Merge (${mergeModeSel ? mergeModeSel.value : 'vertical'}) complete`, false, true);
           }
         } catch(e){}
       });
@@ -586,8 +609,10 @@
     if (showConsGroups) showConsGroups.addEventListener('change', renderOverlay);
     exportBtn.onclick = async ()=>{
       const body = { state: { page: state.page, selected: Array.from(state.selected), selection: state.selection }};
+      setStatus('export', 'Exporting package...', true);
       const r = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/export`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
-      if(r.ok){ const blob = await r.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${state.docId}_export.zip`; a.click(); }
+      if(r.ok){ const blob = await r.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${state.docId}_export.zip`; a.click(); setStatus('export', 'Export complete', false, true); }
+      else { setStatus('export', 'Export failed', false, false); }
     };
     overrideBtn.onclick = ()=>{ state.limitOverride=true; warn.hidden=true; };
   }
