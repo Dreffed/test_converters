@@ -6,11 +6,12 @@
   {% if uploads and uploads|length > 0 %}
     <ul>
     {% for f in uploads %}
-      <li>
+      <li data-file-name="{{ f.name }}">
         <label>
           <input type="checkbox" name="files" value="{{ f.name }}" />
           {{ f.name }} ({{ f.size }} bytes)
         </label>
+        <button type="button" class="btn btn-danger delete-upload" data-file-name="{{ f.name }}">Delete</button>
       </li>
     {% endfor %}
     </ul>
@@ -36,4 +37,17 @@
   <a class="btn" href="/">Cancel</a>
   <p>Available converters: {{ ', '.join(available or []) }}</p>
 </form>
+<script>
+  document.querySelectorAll('.delete-upload').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-file-name');
+      if (!name) return;
+      if (!confirm(`Delete uploaded file ${name}?`)) return;
+      try{
+        const resp = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (resp.ok) { location.reload(); } else { alert('Failed to delete file'); }
+      } catch { alert('Error deleting file'); }
+    });
+  });
+</script>
 {% endblock %}

@@ -473,6 +473,24 @@ def list_files():
     return {"files": items}
 
 
+@app.delete("/api/files/{filename}")
+def delete_file(filename: str):
+    # Security: operate only within uploads dir, only PDFs
+    name = os.path.basename(filename)
+    if not name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    target = UPLOADS_DIR / name
+    try:
+        if target.exists() and target.is_file():
+            target.unlink()
+            return {"ok": True}
+        raise HTTPException(status_code=404, detail="File not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete: {e}")
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}

@@ -6,12 +6,21 @@
     <input type="file" name="file" accept="application/pdf" required />
     <button class="btn" type="submit">Upload</button>
   </form>
-  <p>Uploaded files ({{ uploads|length }}):</p>
-  <ul>
-    {% for f in uploads %}
-      <li>{{ f.name }} ({{ f.size }} bytes)</li>
-    {% endfor %}
-  </ul>
+  <h3>Uploaded Files ({{ uploads|length }})</h3>
+  <div class="table-responsive">
+    <table id="uploadsTable">
+      <thead><tr><th>Name</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for f in uploads %}
+        <tr data-file-name="{{ f.name }}">
+          <td>{{ f.name }}</td>
+          <td>{{ f.size }} bytes</td>
+          <td><button class="btn btn-danger delete-upload" data-file-name="{{ f.name }}">Delete</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section>
@@ -51,6 +60,18 @@
         const resp = await fetch(`/api/runs/${id}`, { method: 'DELETE' });
         if (resp.ok) { location.reload(); } else { alert('Failed to delete run'); }
       } catch { alert('Error deleting run'); }
+    });
+  });
+  // Delete uploaded files
+  document.querySelectorAll('.delete-upload').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-file-name');
+      if (!name) return;
+      if (!confirm(`Delete uploaded file ${name}?`)) return;
+      try{
+        const resp = await fetch(`/api/files/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (resp.ok) { location.reload(); } else { alert('Failed to delete file'); }
+      } catch { alert('Error deleting file'); }
     });
   });
   // Poll for run status updates
