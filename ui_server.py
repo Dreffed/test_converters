@@ -300,7 +300,7 @@ def new_run_page(request: Request):
 @app.post("/runs")
 def create_run(
     files: List[str] = Form([]),
-    converters: str = Form(""),
+    converters: List[str] = Form([]),
     baseline: str = Form(""),
     extra_files: str = Form("")
 ):
@@ -309,7 +309,7 @@ def create_run(
     selected_files = list(files) if isinstance(files, list) else ([files] if files else [])
     if extra_files:
         selected_files.extend([f.strip() for f in extra_files.split(",") if f.strip()])
-    selected_converters = [c for c in converters.split(",") if c]
+    selected_converters = list(converters) if isinstance(converters, list) else ([converters] if converters else [])
     run = {
         "id": run_id,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),

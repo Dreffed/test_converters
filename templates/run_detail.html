@@ -25,6 +25,43 @@
   {% if run.error %}<li>Error: <code>{{ run.error }}</code></li>{% endif %}
   </ul>
 
+  {% if run.artifacts.report %}
+  <h3>Converter Performance</h3>
+  <div id="perfCharts" data-report="{{ run.artifacts.report }}" style="max-width: 960px;">
+    <div id="timeChart"></div>
+    <div id="successChart" style="margin-top: 12px;"></div>
+  </div>
+  <script>
+    (async function(){
+      const el = document.getElementById('perfCharts'); if(!el) return;
+      const path = el.getAttribute('data-report');
+      try{
+        const resp = await fetch('/api/artifacts?path=' + encodeURIComponent(path));
+        if(!resp.ok) return; const data = await resp.json();
+        const convs = data.converters || {};
+        const items = Object.entries(convs).map(([name, s])=>({ name, avg_time: s.avg_time||0, success_rate: (s.successes||0)/(s.total_tests||1) }));
+        items.sort((a,b)=> b.avg_time - a.avg_time);
+        // render bars
+        const maxTime = Math.max(1, ...items.map(i=>i.avg_time));
+        function barRow(i, key, max, unit){
+          const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.style.margin='4px 0';
+          const label = document.createElement('div'); label.textContent=i.name; label.style.width='160px';
+          const bar = document.createElement('div'); bar.style.height='14px'; bar.style.background='#e8e8e8'; bar.style.flex='1'; bar.style.margin='0 8px'; bar.style.position='relative';
+          const fill = document.createElement('div'); fill.style.height='100%'; fill.style.width=((i[key]/max)*100).toFixed(1)+'%'; fill.style.background= key==='avg_time'? '#4a90e2':'#6cbf6c'; bar.appendChild(fill);
+          const val = document.createElement('div'); val.textContent = key==='avg_time' ? i[key].toFixed(3)+' s' : Math.round(i[key]*100)+'%'; val.style.width='80px'; val.style.textAlign='right';
+          wrap.appendChild(label); wrap.appendChild(bar); wrap.appendChild(val); return wrap;
+        }
+        const timeChart = document.getElementById('timeChart');
+        const succChart = document.getElementById('successChart');
+        const h1 = document.createElement('h4'); h1.textContent='Average Time (s)'; timeChart.appendChild(h1);
+        items.forEach(i=> timeChart.appendChild(barRow(i,'avg_time', maxTime, 's')));
+        const h2 = document.createElement('h4'); h2.textContent='Success Rate'; succChart.appendChild(h2);
+        items.slice().sort((a,b)=> b.success_rate - a.success_rate).forEach(i=> succChart.appendChild(barRow(i,'success_rate', 1.0, '%')));
+      } catch(e){}
+    })();
+  </script>
+  {% endif %}
+
 <p>
   <a class="btn" href="/runs/{{ run.id }}/view">Open Viewer</a>
   <a class="btn" href="/runs/{{ run.id }}/tables">Tables</a>

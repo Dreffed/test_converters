@@ -389,6 +389,133 @@ class DocumentConverterBenchmark:
                 export_blocks_json=self.viz_export_blocks,
             )
             print(f"[i] Visual metrics saved to: {metrics['output_dir']}/visual_metrics.json")
+
+            # Enrich detailed results with per-block text, merge and consolidation data
+            try:
+                self._enrich_results_with_block_text_and_groups(file_path, engines_pages)
+            except Exception as e:
+                print(f"[!] Enrichment failed for {file_path}: {e}")
+
+    def _extract_words_norm(self, pdf_path: str, page_index: int) -> List[Dict]:
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            try:
+                p = doc[page_index]
+                rect = p.rect
+                pw, ph = float(rect.width), float(rect.height)
+                out = []
+                for w in p.get_text('words') or []:
+                    if len(w) < 5: continue
+                    x0, y0, x1, y1, txt = float(w[0]), float(w[1]), float(w[2]), float(w[3]), str(w[4] or '')
+                    if not txt: continue
+                    out.append({'x': x0/pw, 'y': y0/ph, 'w': (x1-x0)/pw, 'h': (y1-y0)/ph, 'text': txt})
+                return out
+            finally:
+                doc.close()
+        except Exception:
+            try:
+                import pdfplumber
+                with pdfplumber.open(pdf_path) as pdf:
+                    p = pdf.pages[page_index]
+                    pw, ph = float(p.width), float(p.height)
+                    out = []
+                    for w in p.extract_words() or []:
+                        x0=float(w.get('x0',0)); y0=float(w.get('top',0)); x1=float(w.get('x1',0)); y1=float(w.get('bottom',y0)); txt=str(w.get('text','') or '')
+                        if not txt: continue
+                        out.append({'x': x0/pw, 'y': y0/ph, 'w': (x1-x0)/pw, 'h': (y1-y0)/ph, 'text': txt})
+                    return out
+            except Exception:
+                return []
+
+    def _overlaps(self, a, b) -> bool:
+        ax1=a['x']+a['w']; ay1=a['y']+a['h']; bx1=b['x']+b['w']; by1=b['y']+b['h']
+        iw=max(0.0, min(ax1,bx1)-max(a['x'],b['x'])); ih=max(0.0, min(ay1,by1)-max(a['y'],b['y']))
+        return iw*ih>0
+
+    def _union(self, a, b):
+        x=min(a['x'],b['x']); y=min(a['y'],b['y'])
+        x1=max(a['x']+a['w'], b['x']+b['w']); y1=max(a['y']+a['h'], b['y']+b['h'])
+        return {'x':x,'y':y,'w':max(0.0,x1-x),'h':max(0.0,y1-y)}
+
+    def _enrich_results_with_block_text_and_groups(self, pdf_path: str, engines_pages: Dict[str, Dict[int, List[Dict]]]):
+        # For each engine, for each page, attach text to blocks and add merge/consolidation summaries
+        base = os.path.basename(pdf_path)
+        # Build lookup for ConversionResult
+        idx_map = {}
+        for i, r in enumerate(self.results):
+            if r.file_path == pdf_path:
+                idx_map[r.converter_name] = i
+        for engine, pages in engines_pages.items():
+            if engine not in idx_map: continue
+            res = self.results[idx_map[engine]]
+            meta = res.metadata or {}
+            btpp = {}  # blocks_text_per_page
+            merge_data = {}
+            cons_data = {}
+            for pidx, blocks in pages.items():
+                words = self._extract_words_norm(pdf_path, int(pidx))
+                # text per block
+                texts = []
+                for b in blocks:
+                    bb={'x':float(b.get('x0',0)), 'y':float(b.get('y0',0)), 'w':float(b.get('x1',0))-float(b.get('x0',0)), 'h':float(b.get('y1',0))-float(b.get('y0',0))}
+                    # some metadata already normalized 0..1
+                    if 'x' in b and 'w' in b:
+                        bb={'x':float(b.get('x',0)), 'y':float(b.get('y',0)), 'w':float(b.get('w',0)), 'h':float(b.get('h',0))}
+                    text_parts=[w['text'] for w in words if self._overlaps({'x':w['x'],'y':w['y'],'w':w['w'],'h':w['h']}, bb)]
+                    texts.append(' '.join(text_parts).strip())
+                btpp[str(pidx)] = texts
+                # simple merges for three modes
+                def build_groups(mode:str):
+                    boxes=[]
+                    for b in blocks:
+                        if 'x' in b and 'w' in b:
+                            boxes.append({'x':float(b.get('x',0)),'y':float(b.get('y',0)),'w':float(b.get('w',0)),'h':float(b.get('h',0))})
+                        else:
+                            boxes.append({'x':float(b.get('x0',0)),'y':float(b.get('y0',0)),'w':float(b.get('x1',0))-float(b.get('x0',0)),'h':float(b.get('y1',0))-float(b.get('y0',0))})
+                    n=len(boxes)
+                    visited=[False]*n
+                    groups=[]
+                    if mode=='vertical' or mode=='paragraph':
+                        # overlap/adjacency on y
+                        def edge(u,v):
+                            a=boxes[u]; b=boxes[v]
+                            # overlap or touch vertically
+                            return self._overlaps(a,b)
+                    else:
+                        def edge(u,v):
+                            a=boxes[u]; b=boxes[v]
+                            return self._overlaps(a,b)
+                    for u in range(n):
+                        if visited[u]: continue
+                        visited[u]=True
+                        comp=[u]
+                        gbb=boxes[u]
+                        queue=[u]
+                        while queue:
+                            w=queue.pop(0)
+                            for v in range(n):
+                                if visited[v]: continue
+                                if edge(w,v):
+                                    visited[v]=True; queue.append(v); comp.append(v); gbb=self._union(gbb, boxes[v])
+                        if len(comp)>1:
+                            groups.append({'bbox': gbb, 'members': comp})
+                    return groups
+                merge_data[str(pidx)] = {
+                    'vertical': build_groups('vertical'),
+                    'horizontal': build_groups('horizontal'),
+                    'paragraph': build_groups('paragraph')
+                }
+                # consolidation strategies
+                cons_data[str(pidx)] = {
+                    'overlap': build_groups('paragraph'),
+                    'vertical_centers': [],  # omitted for brevity in enrichment
+                    'paragraph': build_groups('paragraph')
+                }
+            meta['blocks_text_per_page'] = btpp
+            meta['merge_groups_per_page'] = merge_data
+            meta['consolidation'] = cons_data
+            res.metadata = meta
     
     def print_summary(self):
         """Print summary to console"""

@@ -24,9 +24,14 @@
   </label>
   <br/>
 
-  <label>Converters (comma-separated):
-    <input name="converters" value="{{ ','.join(available or []) }}"/>
-  </label>
+  <fieldset>
+    <legend>Converters</legend>
+    {% for c in available %}
+      <label>
+        <input type="checkbox" name="converters" value="{{ c }}" checked /> {{ c }}
+      </label>
+    {% endfor %}
+  </fieldset>
   <br/>
   <label>Baseline:
     <input name="baseline" value="{{ config.baseline }}"/>
