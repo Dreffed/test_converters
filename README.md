@@ -29,6 +29,37 @@ A comprehensive testing framework to benchmark document conversion tools for **s
   - Detailed result logs
   - Visual overlays + coverage metrics (optional)
 
+## Web UI (FastAPI + Jinja)
+
+An interactive viewer and run manager is included:
+
+- Upload PDFs and create runs with selected converters
+- Live status updates while runs execute (polling)
+- Horizontal menu viewer with:
+  - Per-parser text BBox overlays (color-coded, numbers)
+  - Merged overlays (vertical/horizontal/paragraph)
+  - Table overlays (auto-detected table regions)
+  - Consolidation tooling (redundant/unique-extra detection; grouping: overlap, vertical centers, paragraph)
+  - Region selection to compare text across tools
+  - Bottom panels: per-tool text and tables for current page
+  - Export package (PNG/SVG/JSON/CSVs/manifest)
+- Color configuration for tools and overlays in Settings
+- Delete runs with confirmation from index/detail/viewer/tables pages
+
+Run locally:
+
+```bash
+# Using uvicorn
+uvicorn ui_server:app --host 0.0.0.0 --port 8080 --reload
+
+# Or with Docker (dev hot reload)
+docker compose --profile dev up --build app-dev
+```
+
+Open http://localhost:8080
+
+See docs/USER_MANUAL.md for a guided walkthrough.
+
 ## 📋 Prerequisites
 
 ### System Requirements
