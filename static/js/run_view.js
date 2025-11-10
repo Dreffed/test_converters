@@ -27,6 +27,12 @@
   const toggleTableBoxes = document.getElementById('toggleTableBoxes');
   const mergeModeSel = document.getElementById('mergeMode');
   const applyMergeBtn = document.getElementById('applyMerge');
+  const consToolSel = document.getElementById('consTool');
+  const consStrategySel = document.getElementById('consStrategy');
+  const runConsBtn = document.getElementById('runCons');
+  const showConsRedundant = document.getElementById('showConsRedundant');
+  const showConsUnique = document.getElementById('showConsUnique');
+  const showConsGroups = document.getElementById('showConsGroups');
 
   const tabs = $('#resultTabs');
   const panels = $('#resultPanels');
@@ -46,6 +52,7 @@
     selection: null,
     mergedCache: new Map(), // key: `${docId}:${page}:${mode}:${toolsKey}` => groups
     tablesCache: new Map(), // key: `${docId}:${page}` => [{id,bbox}]
+    consolidatedCache: new Map(), // key: `${docId}:${page}:${tool}:${strategy}` => {boxes, merged_groups, layout_groups}
   };
 
   function artifactUrl(path){ return '/api/artifacts?path=' + encodeURIComponent(path); }
@@ -111,6 +118,10 @@
       cb.addEventListener('change', ()=>{ if(cb.checked) state.selected.add(tool); else state.selected.delete(tool); renderOverlay(); renderBottom(); });
       parsersDiv.appendChild(row);
     });
+    if (consToolSel) {
+      consToolSel.innerHTML = '';
+      (d.engines||[]).forEach(tool => { const opt = document.createElement('option'); opt.value = tool; opt.textContent = tool; consToolSel.appendChild(opt); });
+    }
     warn.hidden = state.pageCount <= state.limit || state.limitOverride;
     loadPage();
   }
@@ -147,6 +158,37 @@
     if (toggleTableBoxes && toggleTableBoxes.checked) { await loadTableBoxes(); }
     renderOverlay();
     renderBottom();
+  }
+
+  async function runConsolidation(){
+    const tool = consToolSel ? consToolSel.value : null;
+    const strat = consStrategySel ? consStrategySel.value : 'overlap';
+    if (!tool) return;
+    try{
+      const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/consolidate?tool=${encodeURIComponent(tool)}&strategy=${encodeURIComponent(strat)}`, { method: 'POST' });
+      if (resp.ok) {
+        const data = await resp.json();
+        state.consolidatedCache.set(`${state.docId}:${state.page}:${tool}:${strat}`, data);
+        renderOverlay();
+      } else {
+        alert('Consolidation failed');
+      }
+    } catch {}
+  }
+
+  async function loadConsolidated(tool){
+    const strat = consStrategySel ? consStrategySel.value : 'overlap';
+    const key = `${state.docId}:${state.page}:${tool}:${strat}`;
+    if (state.consolidatedCache.has(key)) return state.consolidatedCache.get(key);
+    try{
+      const resp = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/page/${state.page}/consolidated?tool=${encodeURIComponent(tool)}&strategy=${encodeURIComponent(strat)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        state.consolidatedCache.set(key, data);
+        return data;
+      }
+    } catch {}
+    return null;
   }
 
   async function loadBoxes(){
@@ -537,6 +579,11 @@
     if(toggleMerged){ toggleMerged.addEventListener('change', renderOverlay); }
     if (toggleTextBoxes) toggleTextBoxes.addEventListener('change', renderOverlay);
     if (toggleTableBoxes) toggleTableBoxes.addEventListener('change', async ()=>{ if(toggleTableBoxes.checked) await loadTableBoxes(); renderOverlay(); });
+    if (runConsBtn) runConsBtn.addEventListener('click', runConsolidation);
+    if (consStrategySel) consStrategySel.addEventListener('change', renderOverlay);
+    if (showConsRedundant) showConsRedundant.addEventListener('change', renderOverlay);
+    if (showConsUnique) showConsUnique.addEventListener('change', renderOverlay);
+    if (showConsGroups) showConsGroups.addEventListener('change', renderOverlay);
     exportBtn.onclick = async ()=>{
       const body = { state: { page: state.page, selected: Array.from(state.selected), selection: state.selection }};
       const r = await fetch(`/api/runs/${runId}/doc/${encodeURIComponent(state.docId)}/export`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });

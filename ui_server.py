@@ -1360,7 +1360,7 @@ async def api_merge_boxes(run_id: int, doc: str, page: int, request: Request):
 
 
 @app.post("/api/runs/{run_id}/doc/{doc}/page/{page}/consolidate")
-async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(...)):
+async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(...), strategy: str = Query("overlap")):
     doc_dir = _doc_dir_for(run_id, doc)
     boxes_by_engine = _load_boxes_by_engine(doc_dir)
     if boxes_by_engine is None:
@@ -1399,31 +1399,72 @@ async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(..
                     A['unique_extra'] = True
                 else:
                     A['redundant'] = True
-    # Overlap merge groups (single-linkage on overlap)
+    # Grouping per strategy
     groups = []
-    used = [False] * len(bboxes)
-    for i in range(len(bboxes)):
-        if used[i]:
-            continue
-        used[i] = True
-        members = [i]
-        gbb = dict(bboxes[i]['bbox'])
-        changed = True
-        while changed:
-            changed = False
-            for j in range(len(bboxes)):
-                if used[j]:
-                    continue
-                if _overlaps(gbb, bboxes[j]['bbox']):
-                    used[j] = True
-                    members.append(j)
-                    gbb = _union(gbb, bboxes[j]['bbox'])
-                    changed = True
-        if len(members) > 1:
-            gid = f"merged-p{page}-g{len(groups)+1}"
-            for m in members:
-                bboxes[m]['merged_group'] = gid
-            groups.append({'id': gid, 'bbox': gbb, 'members': [bboxes[m]['id'] for m in members]})
+    n = len(bboxes)
+    centers = [(bb['bbox']['x'] + bb['bbox']['w']/2.0, bb['bbox']['y'] + bb['bbox']['h']/2.0) for bb in bboxes]
+    def build_groups_by_edges(edge_fn):
+        visited = [False]*n
+        out = []
+        for i in range(n):
+            if visited[i]:
+                continue
+            visited[i] = True
+            comp = [i]
+            queue = [i]
+            gbb = dict(bboxes[i]['bbox'])
+            while queue:
+                u = queue.pop(0)
+                for v in range(n):
+                    if visited[v]:
+                        continue
+                    if edge_fn(u, v):
+                        visited[v] = True
+                        comp.append(v)
+                        gbb = _union(gbb, bboxes[v]['bbox'])
+                        queue.append(v)
+            if len(comp) > 1:
+                gid = f"merged-p{page}-g{len(out)+1}"
+                for m in comp:
+                    bboxes[m]['merged_group'] = gid
+                out.append({'id': gid, 'bbox': gbb, 'members': [bboxes[m]['id'] for m in comp]})
+        return out
+
+    center_tol = 0.02
+    gap_tol = 0.03
+    x_overlap_frac = 0.3
+
+    if strategy == 'overlap':
+        def edge(u, v):
+            return _overlaps(bboxes[u]['bbox'], bboxes[v]['bbox'])
+        groups = build_groups_by_edges(edge)
+    elif strategy == 'vertical_centers':
+        def edge(u, v):
+            cxu, cyu = centers[u]; cxv, cyv = centers[v]
+            if abs(cxu - cxv) <= center_tol:
+                # reasonable vertical separation
+                return True
+            return False
+        groups = build_groups_by_edges(edge)
+    elif strategy == 'paragraph':
+        def x_overlap_ratio(a, b):
+            ax0=a['x']; ax1=a['x']+a['w']; bx0=b['x']; bx1=b['x']+b['w']
+            inter = max(0.0, min(ax1, bx1) - max(ax0, bx0))
+            return inter / max(1e-6, min(a['w'], b['w']))
+        def edge(u, v):
+            au = bboxes[u]['bbox']; av = bboxes[v]['bbox']
+            # close vertically, some horizontal overlap
+            if abs(au['y'] - av['y']) <= gap_tol or abs((au['y']+au['h']) - (av['y']+av['h'])) <= gap_tol:
+                return x_overlap_ratio(au, av) >= x_overlap_frac
+            # also allow chaining by small vertical gaps
+            ty = min(au['y']+au['h'], av['y']+av['h']) - max(au['y'], av['y'])
+            if ty >= 0 and x_overlap_ratio(au, av) >= x_overlap_frac:
+                return True
+            return False
+        groups = build_groups_by_edges(edge)
+    else:
+        groups = []
+
     # Classify groups into paragraph/row/column (heuristic)
     layout_groups = []
     def classify(member_indices: List[int]) -> str:
@@ -1446,7 +1487,12 @@ async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(..
         # Map member ids back to indices
         idxs = [next((i for i, b in enumerate(bboxes) if b['id'] == mid), -1) for mid in g['members']]
         idxs = [i for i in idxs if i >= 0]
-        ltype = classify(idxs)
+        if strategy == 'vertical_centers':
+            ltype = 'column'
+        elif strategy == 'paragraph':
+            ltype = 'paragraph'
+        else:
+            ltype = classify(idxs)
         layout_groups.append({'type': ltype, 'bbox': g['bbox'], 'members': g['members']})
 
     # Persist consolidated annotations next to doc_dir
@@ -1458,17 +1504,20 @@ async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(..
                 cons_all = json.loads(cons_path.read_text(encoding='utf-8'))
             except Exception:
                 cons_all = {}
-        cons_all[str(page)] = {
+        page_entry = cons_all.get(str(page), {})
+        page_entry[strategy] = {
             'boxes': bboxes,
             'merged_groups': groups,
             'layout_groups': layout_groups
         }
+        cons_all[str(page)] = page_entry
         cons_path.write_text(json.dumps(cons_all, indent=2), encoding='utf-8')
     except Exception:
         pass
     return {
         'page': page,
         'tool': tool,
+        'strategy': strategy,
         'boxes': bboxes,
         'merged_groups': groups,
         'layout_groups': layout_groups
@@ -1476,13 +1525,14 @@ async def api_consolidate(run_id: int, doc: str, page: int, tool: str = Query(..
 
 
 @app.get("/api/runs/{run_id}/doc/{doc}/page/{page}/consolidated")
-def api_get_consolidated(run_id: int, doc: str, page: int, tool: str):
+def api_get_consolidated(run_id: int, doc: str, page: int, tool: str, strategy: str = Query("overlap")):
     doc_dir = _doc_dir_for(run_id, doc)
     cons_path = doc_dir / f"consolidated_{tool}.json"
     if cons_path.exists():
         try:
             data = json.loads(cons_path.read_text(encoding='utf-8'))
-            return data.get(str(page)) or {'boxes': [], 'merged_groups': [], 'layout_groups': []}
+            page_entry = data.get(str(page)) or {}
+            return page_entry.get(strategy) or {'boxes': [], 'merged_groups': [], 'layout_groups': []}
         except Exception:
             pass
     return {'boxes': [], 'merged_groups': [], 'layout_groups': []}
